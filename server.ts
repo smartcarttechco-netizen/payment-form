@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 // Types for Transaction and Credit Card
@@ -73,7 +74,7 @@ let transactions: Transaction[] = [
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // Body parser middleware
   app.use(express.json());
@@ -309,7 +310,11 @@ async function startServer() {
   });
 
   // --- Vite Dev Server Middleware vs Production Static Assets ---
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction = process.env.NODE_ENV === 'production' || 
+                       (typeof __filename !== 'undefined' && __filename.includes('dist')) ||
+                       !fs.existsSync(path.join(process.cwd(), 'server.ts'));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
