@@ -1,0 +1,6 @@
+{
+  "name": "3D Credit Card Payment System",
+  "description": "A 3D Credit Card Payment System featuring an interactive card visualizer, Luhn-algorithm payment form, and a real-time full-stack Admin Dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
