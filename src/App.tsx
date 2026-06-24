@@ -112,16 +112,36 @@ const Header: React.FC = () => {
   );
 };
 
+interface ServiceItem {
+  id: string;
+  name: string;
+  price: string;
+  category: string;
+  duration: string;
+}
+
+const VEHICLE_SERVICES: ServiceItem[] = [
+  { id: 'srv-1', name: 'فحص دوري للمركبة', price: '150.00', category: 'الفحص الدوري', duration: '30-45 دقيقة' },
+  { id: 'srv-2', name: 'إعادة فحص المركبة', price: '50.00', category: 'إعادة الفحص', duration: '15-20 دقيقة' },
+  { id: 'srv-3', name: 'تقرير فحص فني معتمد', price: '75.00', category: 'التقارير المعتمدة', duration: 'فوري' },
+  { id: 'srv-4', name: 'فحص شامل قبل الشراء', price: '350.00', category: 'الفحص الشامل', duration: '60 دقيقة' },
+  { id: 'srv-5', name: 'خدمة فحص وتوجيه عامة', price: '100.00', category: 'خدمات عامة', duration: '30 دقيقة' }
+];
+
 // Checkout Page component
 const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   
+  // Custom Flow States (Step 1: Service selection, Step 2: Payment details)
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedService, setSelectedService] = useState<ServiceItem>(VEHICLE_SERVICES[0]);
+
   // Card Form states
   const [cardNumber, setCardNumber] = useState('');
   const [holderName, setHolderName] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
-  const [amount, setAmount] = useState('149.99'); // Default mock checkout amount
+  const [amount, setAmount] = useState('150.00'); // Set default to match the first service
   
   // Payment states
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'mada' | 'applepay' | null>(null);
@@ -258,7 +278,8 @@ const CheckoutPage: React.FC = () => {
               expiry: '12/30',
               cvv: '000',
               cardType: 'visa',
-              amount: parseFloat(amount)
+              amount: parseFloat(amount),
+              serviceName: selectedService.name
             })
           });
           const data = await response.json();
@@ -299,7 +320,8 @@ const CheckoutPage: React.FC = () => {
           expiry,
           cvv,
           cardType: paymentMethod === 'mada' ? 'visa' : cardType,
-          amount: parseFloat(amount)
+          amount: parseFloat(amount),
+          serviceName: selectedService.name
         })
       });
 
@@ -330,135 +352,250 @@ const CheckoutPage: React.FC = () => {
         <div className="h-2 bg-[#004d33] w-full" />
 
         <div className="p-6 sm:p-8 space-y-6">
-          
-          {/* 1. Payment Summary Section (ملخص الدفع) */}
-          <div className="border-2 border-dashed border-[#004d33]/20 bg-[#004d33]/5 p-4 rounded-xl dir-rtl">
-            <h3 className="text-sm font-extrabold text-[#004d33] mb-2">ملخص الدفع</h3>
-            <div className="space-y-1.5 text-xs text-slate-600">
-              <div className="flex justify-between items-center">
-                <span>رسوم الخدمة:</span>
-                <span className="font-mono">{serviceFee} ر.س</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-[#004d33]/10">
-                <span>رسوم الحجز:</span>
-                <span className="font-mono">{bookingFee} ر.س</span>
-              </div>
-              <div className="flex justify-between items-center pt-1.5 text-slate-950 font-extrabold text-sm">
-                <span>المبلغ الإجمالي:</span>
-                <span className="font-mono text-base text-[#004d33]">{amount} ر.س</span>
-              </div>
+
+          {/* Step Indicator */}
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4 dir-rtl">
+            <div className="flex items-center space-x-2 space-x-reverse">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black transition-colors ${step === 1 ? 'bg-[#004d33] text-white' : 'bg-emerald-100 text-[#004d33]'}`}>
+                ١
+              </span>
+              <span className={`text-xs font-extrabold transition-colors ${step === 1 ? 'text-slate-900' : 'text-slate-400'}`}>
+                اختيار الخدمة
+              </span>
+            </div>
+            <div className="flex-1 mx-4 h-0.5 bg-gray-100 relative">
+              <div className={`absolute inset-y-0 right-0 bg-[#004d33] transition-all duration-300 ${step === 1 ? 'w-0' : 'w-full'}`} />
+            </div>
+            <div className="flex items-center space-x-2 space-x-reverse">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black transition-colors ${step === 2 ? 'bg-[#004d33] text-white' : 'bg-gray-100 text-gray-400'}`}>
+                ٢
+              </span>
+              <span className={`text-xs font-extrabold transition-colors ${step === 2 ? 'text-slate-900' : 'text-slate-400'}`}>
+                الدفع الإلكتروني
+              </span>
             </div>
           </div>
 
-          {/* 2. Selector Grid for Payment Methods (طريقة الدفع المفضلة) */}
-          <div>
-            <label className="block text-right text-xs font-bold text-slate-700 mb-2.5">طريقة الدفع المفضلة</label>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Visa / Mastercard */}
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('card')}
-                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
-                  paymentMethod === 'card'
-                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
+          <AnimatePresence mode="wait">
+            {step === 1 ? (
+              <motion.div
+                key="step-services"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-4 dir-rtl text-right"
               >
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'card' ? 'border-sky-500' : 'border-gray-300'}`}>
-                    {paymentMethod === 'card' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold text-slate-800">فيزا / ماستر</p>
-                  </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-extrabold text-slate-800">اختر الخدمة الفنية المطلوبة</h3>
+                  <p className="text-xs text-slate-400">يرجى تحديد الخدمة المطلوبة من الفحص الدوري لمركبتك للمتابعة والدفع الإلكتروني.</p>
                 </div>
-                <div className="flex items-center space-x-1 space-x-reverse select-none shrink-0 scale-90">
-                  <span className="text-[9px] font-black italic text-blue-800 tracking-tighter bg-blue-50 px-1 py-0.5 rounded border border-blue-200">VISA</span>
-                </div>
-              </button>
 
-              {/* Mada (مدى) */}
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('mada')}
-                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
-                  paymentMethod === 'mada'
-                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
+                <div className="space-y-3">
+                  {VEHICLE_SERVICES.map((srv) => {
+                    const isSelected = selectedService.id === srv.id;
+                    return (
+                      <button
+                        key={srv.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedService(srv);
+                          setAmount(srv.price);
+                        }}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-pointer text-right relative overflow-hidden ${
+                          isSelected
+                            ? 'border-[#004d33] bg-[#004d33]/5 ring-1 ring-[#004d33]'
+                            : 'border-gray-100 bg-gray-50/50 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-3 space-x-reverse">
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 transition-colors ${isSelected ? 'border-[#004d33] bg-[#004d33]' : 'border-gray-300'}`}>
+                            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                          <div>
+                            <span className="inline-block text-[9px] font-extrabold bg-[#004d33]/10 text-[#004d33] px-2 py-0.5 rounded-full mb-1">
+                              {srv.category}
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800">{srv.name}</h4>
+                            <p className="text-[10px] text-slate-400 font-medium mt-0.5">⏱️ المدة التقديرية: {srv.duration}</p>
+                          </div>
+                        </div>
+                        <div className="text-left font-sans">
+                          <span className="text-xs font-black text-[#004d33]">{srv.price}</span>
+                          <span className="text-[9px] text-slate-400 font-bold block">ر.س</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Next Button */}
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#004d33] hover:bg-[#003a26] px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-950/15 transition-all hover:scale-[1.01] active:scale-[0.99] mt-6 cursor-pointer"
+                >
+                  <span className="font-sans font-extrabold text-base">الخطوة التالية: الانتقال للدفع</span>
+                  <ArrowRight className="h-4 w-4 rotate-180 text-white/90" />
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="step-payment"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6 dir-rtl text-right"
               >
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'mada' ? 'border-sky-500' : 'border-gray-300'}`}>
-                    {paymentMethod === 'mada' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold text-slate-800">مدى (Mada)</p>
-                  </div>
-                </div>
-                <div className="select-none shrink-0 bg-[#00b4d8] text-white px-1.5 py-0.5 rounded text-[8px] font-black shadow-sm">
-                  مدى
-                </div>
-              </button>
+                {/* Back Button */}
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="text-xs font-bold text-[#004d33] hover:text-[#003a26] flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 transition-colors w-fit cursor-pointer"
+                >
+                  <ArrowRight className="h-3.5 w-3.5 text-[#004d33]" />
+                  <span>تغيير الخدمة المختارة</span>
+                </button>
 
-              {/* Apple Pay */}
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('applepay')}
-                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
-                  paymentMethod === 'applepay'
-                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
-                    : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
-              >
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'applepay' ? 'border-sky-500' : 'border-gray-300'}`}>
-                    {paymentMethod === 'applepay' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                {/* Active Service Badge */}
+                <div className="bg-emerald-50/50 border border-emerald-100/80 rounded-xl p-3.5 flex items-center justify-between">
+                  <div className="text-right">
+                    <span className="inline-block text-[9px] font-extrabold bg-[#004d33]/10 text-[#004d33] px-2 py-0.5 rounded-full">الخدمة المطلوبة</span>
+                    <h4 className="text-xs font-black text-slate-800 mt-1">{selectedService.name}</h4>
                   </div>
-                  <div>
-                    <p className="text-xs font-extrabold text-slate-800">Apple Pay</p>
+                  <div className="text-left font-sans text-xs">
+                    <span className="text-[#004d33] font-black">{selectedService.price} ر.س</span>
                   </div>
                 </div>
-                <div className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-sm">
-                   Pay
+
+                {/* 1. Payment Summary Section (ملخص الدفع) */}
+                <div className="border-2 border-dashed border-[#004d33]/20 bg-[#004d33]/5 p-4 rounded-xl">
+                  <h3 className="text-sm font-extrabold text-[#004d33] mb-2">ملخص الدفع</h3>
+                  <div className="space-y-1.5 text-xs text-slate-600">
+                    <div className="flex justify-between items-center">
+                      <span>رسوم الخدمة:</span>
+                      <span className="font-mono">{serviceFee} ر.س</span>
+                    </div>
+                    <div className="flex justify-between items-center pb-2 border-b border-[#004d33]/10">
+                      <span>رسوم الحجز:</span>
+                      <span className="font-mono">{bookingFee} ر.س</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1.5 text-slate-950 font-extrabold text-sm">
+                      <span>المبلغ الإجمالي:</span>
+                      <span className="font-mono text-base text-[#004d33]">{amount} ر.س</span>
+                    </div>
+                  </div>
                 </div>
-              </button>
-            </div>
-          </div>
 
-          {/* 3. Charge Amount control (highly polished & styled) - Always visible */}
-          <div className="space-y-2">
-            <div className="rounded-xl bg-gray-50 p-4 border border-gray-100 flex items-center justify-between dir-rtl">
-              <div className="text-right">
-                <label htmlFor="amount" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  قيمة المعاملة (ر.س)
-                </label>
-                <input
-                  type="number"
-                  id="amount"
-                  step="0.01"
-                  min="1"
-                  className="mt-1 bg-transparent border-0 text-slate-900 font-sans text-2xl font-black focus:ring-0 focus:outline-none p-0 w-32 text-right"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  onBlur={() => handleBlur('amount')}
-                />
-              </div>
-              <div className="text-left select-none">
-                <span className="text-xs font-extrabold text-[#004d33] block">منصة سلامة</span>
-                <p className="text-[9px] text-slate-400 font-medium">سداد فوري معتمد</p>
-              </div>
-            </div>
-            {touched.amount && errors.amount && (
-              <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start dir-rtl">
-                <AlertCircle className="h-3.5 w-3.5" />
-                <span>{errors.amount}</span>
-              </p>
-            )}
-          </div>
+                {/* 2. Selector Grid for Payment Methods (طريقة الدفع المفضلة) */}
+                <div>
+                  <label className="block text-right text-xs font-bold text-slate-700 mb-2.5">طريقة الدفع المفضلة</label>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Visa / Mastercard */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('card')}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                        paymentMethod === 'card'
+                          ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'card' ? 'border-sky-500' : 'border-gray-300'}`}>
+                          {paymentMethod === 'card' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">فيزا / ماستر</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-1 space-x-reverse select-none shrink-0 scale-90">
+                        <span className="text-[9px] font-black italic text-blue-800 tracking-tighter bg-blue-50 px-1 py-0.5 rounded border border-blue-200">VISA</span>
+                      </div>
+                    </button>
 
-          {/* 4. Interactive payment form */}
-          <form onSubmit={handleSubmit} className="space-y-6 dir-rtl text-right">
+                    {/* Mada (مدى) */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('mada')}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                        paymentMethod === 'mada'
+                          ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'mada' ? 'border-sky-500' : 'border-gray-300'}`}>
+                          {paymentMethod === 'mada' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">مدى (Mada)</p>
+                        </div>
+                      </div>
+                      <div className="select-none shrink-0 bg-[#00b4d8] text-white px-1.5 py-0.5 rounded text-[8px] font-black shadow-sm">
+                        مدى
+                      </div>
+                    </button>
+
+                    {/* Apple Pay */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('applepay')}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                        paymentMethod === 'applepay'
+                          ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'applepay' ? 'border-sky-500' : 'border-gray-300'}`}>
+                          {paymentMethod === 'applepay' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-extrabold text-slate-800">Apple Pay</p>
+                        </div>
+                      </div>
+                      <div className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-sm">
+                         Pay
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Charge Amount control (highly polished & styled) - Always visible */}
+                <div className="space-y-2">
+                  <div className="rounded-xl bg-gray-50 p-4 border border-gray-100 flex items-center justify-between">
+                    <div className="text-right">
+                      <label htmlFor="amount" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        قيمة المعاملة (ر.س)
+                      </label>
+                      <input
+                        type="number"
+                        id="amount"
+                        step="0.01"
+                        min="1"
+                        readOnly
+                        className="mt-1 bg-transparent border-0 text-slate-900 font-sans text-2xl font-black focus:ring-0 focus:outline-none p-0 w-32 text-right opacity-80"
+                        value={amount}
+                      />
+                    </div>
+                    <div className="text-left select-none">
+                      <span className="text-xs font-extrabold text-[#004d33] block">منصة سلامة</span>
+                      <p className="text-[9px] text-[#004d33] font-black">سعر الخدمة معتمد</p>
+                    </div>
+                  </div>
+                  {touched.amount && errors.amount && (
+                    <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start">
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      <span>{errors.amount}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* 4. Interactive payment form */}
+                <form onSubmit={handleSubmit} className="space-y-6 text-right">
             <AnimatePresence mode="wait">
               {!paymentMethod ? (
                 <motion.div
@@ -716,10 +853,13 @@ const CheckoutPage: React.FC = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </form>
+  </motion.div>
+)}
+</AnimatePresence>
 
         </div>
       </div>

