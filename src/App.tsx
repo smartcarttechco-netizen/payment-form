@@ -90,15 +90,8 @@ const Header: React.FC = () => {
     <header className="sticky top-0 z-40 w-full border-b border-gray-100 bg-white shadow-sm font-sans">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         
-        {/* Left side: Navigation / Admin trigger */}
+        {/* Left side: Navigation / Admin trigger (Removed as requested) */}
         <div className="flex items-center space-x-3 space-x-reverse">
-          <Link
-            to="/dashboard"
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition"
-          >
-            <Terminal className="h-3.5 w-3.5 text-[#004d33]" />
-            <span>لوحة التحكم الإدارية</span>
-          </Link>
         </div>
 
         {/* Right side: Salamh Logo and Title */}
