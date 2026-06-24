@@ -13,6 +13,9 @@ interface Transaction {
   amount: number;
   timestamp: string;
   status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED';
+  serviceName?: string;
+  nationalId?: string;
+  nafathVerified?: boolean;
 }
 
 export function OTPPage() {

